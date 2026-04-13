@@ -583,9 +583,8 @@ async function submitOrderEdit() {
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
-        const data = await response.json();
-      // 🍊 [이게 핵심] 원장님 API는 data 안에 실질적인 내용이 들어있습니다.
-        if (data.data) data = data.data;
+       let data = await response.json(); // const를 let으로 바꿔야 값을 덮어쓸 수 있습니다.
+if (data.data) data = data.data;
 
         // 1. 공지사항 로직 (클릭 시 팝업 연동 포함)
         if (data.notices && data.notices.length > 0) {
