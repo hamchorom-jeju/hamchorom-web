@@ -584,12 +584,10 @@ async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
         let res = await response.json();
-        
-        // 🍊 [주머니 열기] 어떤 구조로 오든 대응
         let data = res.data || res; 
 
-        // 1. 공지사항 (클릭 시 팝업 연동)
-        const notices = data.notices || data.noticeList || [];
+        // 1. 공지사항 로직 (클릭 연동 보강)
+        const notices = data.notices || [];
         if (notices.length > 0) {
             const notice = notices[0];
             const bar = document.getElementById('notice-bar');
@@ -597,58 +595,83 @@ async function loadFarmNews() {
             if (bar && content) {
                 bar.style.display = 'flex';
                 bar.style.cursor = 'pointer';
-                content.innerText = notice.title || notice.subject || "공지사항";
+                content.innerText = notice.title || "공지사항";
                 
-                // 🍊 공지 전용 이미지 ID 추출
-                let raw = notice.imageUrl || notice.image || "";
+                let raw = notice.imageUrl || "";
                 let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
-                const finalNoticeImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=w800` : raw;
+                const finalNoticeImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=800` : raw;
 
-                bar.onclick = () => openStoryModal({
-                    imageUrl: finalNoticeImg,
-                    title: notice.title || notice.subject,
-                    content: notice.content || notice.body
-                });
+                // 🍊 클릭 이벤트 확실히 바인딩
+                bar.onclick = function() {
+                    openStoryModal({
+                        imageUrl: finalNoticeImg,
+                        title: notice.title,
+                        content: notice.content
+                    });
+                };
             }
         }
 
-        // 2. 농장소식 (원형 이미지 엑박 해결)
-        const stories = data.stories || data.storyList || [];
+        // 2. 농장소식 로직 (중앙 정렬 및 클릭 복구)
+        const stories = data.stories || [];
         if (stories.length > 0) {
+            const section = document.getElementById('story-section');
             const list = document.getElementById('story-list');
-            if (list) {
-                document.getElementById('story-section').style.display = 'block';
+            if (section && list) {
+                section.style.display = 'block';
+                // 🍊 노트북 등 대화면에서 스토리가 적을 때 중앙 정렬되도록 스타일 추가
+                list.style.display = 'flex';
+                list.style.justifyContent = 'center'; 
+                list.style.gap = '20px';
+                list.style.flexWrap = 'wrap';
+                
                 list.innerHTML = ''; 
                 stories.forEach(story => {
-                    let raw = story.imageUrl || story.image || "";
+                    let raw = story.imageUrl || "";
                     let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
-                    const finalImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : raw;
+                    const finalImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=500` : raw;
 
                     const item = document.createElement('div');
                     item.className = 'story-item';
+                    item.style.cursor = 'pointer'; // 클릭 가능 표시
                     item.innerHTML = `
                         <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
-                        <span>${story.title || story.subject || "농장소식"}</span>
+                        <span>${story.title || "농장소식"}</span>
                     `;
-                    // 🍊 클릭 시 해당 데이터 전송 (이미지 주소 포함)
-                    item.onclick = () => openStoryModal({
-                        title: story.title || story.subject,
-                        content: story.content || story.body,
-                        imageUrl: finalImg
-                    });
+                    
+                    // 🍊 익명 함수로 클릭 이벤트 확실히 연결
+                    item.onclick = function() {
+                        openStoryModal({
+                            title: story.title,
+                            content: story.content,
+                            imageUrl: finalImg
+                        });
+                    };
                     list.appendChild(item);
                 });
             }
         }
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
-document.addEventListener('click', (e) => {
+
+// 3. 상세보기 팝업 엔진 (함수명 및 로직 재점검)
+function openStoryModal(data) {
     const modal = document.getElementById('story-modal');
-    // 클릭한 대상이 close-modal 클래스(X버튼)이거나 모달 배경일 경우 닫음
+    if (modal) {
+        document.getElementById('modal-img').src = data.imageUrl || "";
+        document.getElementById('modal-title').innerText = data.title || "";
+        document.getElementById('modal-body').innerText = data.content || "";
+        modal.style.display = 'block';
+    }
+}
+
+// 4. 팝업 닫기 (이게 있어야 X 눌렀을 때 닫힙니다)
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('story-modal');
     if (e.target.classList.contains('close-modal') || e.target === modal) {
         if (modal) modal.style.display = 'none';
     }
 });
 
-// 4. 원장님의 유일한 시동 열쇠
+// 🚀 시동 열쇠
 window.addEventListener('load', loadFarmNews);
