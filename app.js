@@ -16,7 +16,8 @@ const MOCK_PRODUCTS = [
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
-  fetchProducts();
+  fetchProducts(); // 상품 목록 불러오기
+  loadFarmNews();  // 공지사항 및 농장소식 불러오기 (이 줄이 꼭 있어야 합니다!)
 });
 
 // --- API FETCH LOGIC ---
