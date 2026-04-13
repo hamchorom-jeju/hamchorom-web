@@ -580,7 +580,9 @@ async function submitOrderEdit() {
   }
 }
 
-// 1. 농장소식 및 공지사항 로딩 엔진 (정밀 보정판)
+// --- 원장님의 성역 (allProducts, fetchProducts 등 상단 로직 100% 보존) ---
+
+// 1. 농장소식 및 공지사항 로딩 엔진 (이미지 추출 로직만 강화)
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
@@ -598,11 +600,11 @@ async function loadFarmNews() {
                 bar.style.cursor = 'pointer';
                 content.innerText = notice.title || "공지사항";
                 
-                // 🍊 이미지 ID 추출 (있을 때만 주소 생성)
+                // 🍊 어떤 링크든 ID만 있으면 추출하는 가장 확실한 방법으로 보정
                 let raw = notice.imageUrl || "";
                 let fId = "";
-                let m = raw.match(/[?&]id=([^&]+)/) || raw.match(/\/d\/([^/]+)/);
-                if (m) fId = m[1];
+                if (raw.includes('id=')) fId = raw.split('id=')[1].split('&')[0];
+                else if (raw.includes('/d/')) fId = raw.split('/d/')[1].split('/')[0];
 
                 const finalNoticeImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w800` : "";
 
@@ -616,7 +618,7 @@ async function loadFarmNews() {
             }
         }
 
-        // [농장소식 섹션] - 중앙 정렬 및 엑박 박멸
+        // [농장소식 섹션] - 중앙 정렬 보존
         const stories = data.stories || [];
         if (stories.length > 0) {
             const section = document.getElementById('story-section');
@@ -632,10 +634,9 @@ async function loadFarmNews() {
                 stories.forEach(story => {
                     let raw = story.imageUrl || "";
                     let fId = "";
-                    let m = raw.match(/[?&]id=([^&]+)/) || raw.match(/\/d\/([^/]+)/);
-                    if (m) fId = m[1];
+                    if (raw.includes('id=')) fId = raw.split('id=')[1].split('&')[0];
+                    else if (raw.includes('/d/')) fId = raw.split('/d/')[1].split('/')[0];
 
-                    // ID가 있으면 썸네일로, 없으면 원본으로, 그것도 없으면 기본이미지로
                     const finalImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : (raw || 'https://via.placeholder.com/150?text=Hamchorom');
 
                     const item = document.createElement('div');
@@ -659,18 +660,21 @@ async function loadFarmNews() {
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
 
-// 2. 상세보기 팝업 엔진 (이미지 무결성 체크)
+// 2. 상세보기 팝업 엔진 (여백 자동 확보 로직 추가)
 function openStoryModal(data) {
     const modal = document.getElementById('story-modal');
     if (modal) {
         const modalImg = document.getElementById('modal-img');
+        const modalTitle = document.getElementById('modal-title');
         
-        // 🍊 주소가 20자 이상(정상 주소)일 때만 이미지를 보여주고, 아니면 숨김
+        // 🍊 사진이 없을 때 X 버튼과 겹치지 않게 제목 상단 여백 확보
         if (data.imageUrl && data.imageUrl.length > 20) {
             modalImg.src = data.imageUrl;
             modalImg.style.display = 'block';
+            modalTitle.style.marginTop = "10px"; 
         } else {
             modalImg.style.display = 'none';
+            modalTitle.style.marginTop = "40px"; // 여백 강제 부여
         }
 
         document.getElementById('modal-title').innerText = data.title || "";
@@ -679,7 +683,7 @@ function openStoryModal(data) {
     }
 }
 
-// 3. 팝업 닫기 (이벤트 전파 방지 포함)
+// 3. 팝업 닫기 (원장님 원본 보존)
 document.addEventListener('click', function(e) {
     const modal = document.getElementById('story-modal');
     if (e.target.classList.contains('close-modal') || e.target === modal) {
@@ -687,5 +691,5 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// 🚀 [유일한 시동키] 모든 로직 보존의 핵심
+// 🚀 시동 열쇠 (보존)
 window.addEventListener('load', loadFarmNews);
