@@ -580,13 +580,12 @@ async function submitOrderEdit() {
   }
 }
 
-// [app.js 맨 하단] 원장님, 이 함수 본체만 갈아끼우세요. 시동 코드는 절대 추가하지 마세요!
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
         const data = await response.json();
 
-        // 1. 공지사항 (클릭 시 팝업 연동)
+        // 1. 공지사항 로직 (클릭 시 팝업 연동 포함)
         if (data.notices && data.notices.length > 0) {
             const notice = data.notices[0];
             const bar = document.getElementById('notice-bar');
@@ -595,7 +594,7 @@ async function loadFarmNews() {
                 bar.style.display = 'flex';
                 bar.style.cursor = 'pointer';
                 content.innerText = notice.title;
-                // 🍊 원장님, 여기서 상세내용 팝업을 연결합니다.
+                // 공지 클릭 시 상세보기 팝업 실행
                 bar.onclick = () => openStoryModal({
                     imageUrl: "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500",
                     title: notice.title,
@@ -604,17 +603,16 @@ async function loadFarmNews() {
             }
         }
 
-        // 2. 농장소식 (이미지 ID 추출 보정)
+        // 2. 농장소식 로직 (이미지 ID 추출 강화 + 상세보기 연동)
         if (data.stories && data.stories.length > 0) {
             const list = document.getElementById('story-list');
             if (list) {
                 document.getElementById('story-section').style.display = 'block';
                 list.innerHTML = ''; 
                 data.stories.forEach(story => {
-                    // 🍊 주소 전체에서 ID만 쏙 뽑아내서 엑박을 방지합니다.
+                    // 🍊 주소 전체에서 ID만 정확히 뽑아내어 엑박 방지
                     let raw = story.imageUrl || "";
                     let fId = raw.match(/id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
-
                     const finalImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : raw;
 
                     const item = document.createElement('div');
@@ -623,7 +621,7 @@ async function loadFarmNews() {
                         <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
                         <span>${story.title}</span>
                     `;
-                    // 🍊 스토리 클릭 시 상세보기 연결
+                    // 스토리 클릭 시 상세보기 팝업 실행
                     item.onclick = () => openStoryModal({ ...story, imageUrl: finalImg });
                     list.appendChild(item);
                 });
@@ -631,3 +629,17 @@ async function loadFarmNews() {
         }
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
+
+// 🖼️ [중요] 이 함수도 loadFarmNews 바로 아래에 있는지 꼭 확인하세요!
+function openStoryModal(data) {
+    const modal = document.getElementById('story-modal');
+    if (modal) {
+        document.getElementById('modal-img').src = data.imageUrl;
+        document.getElementById('modal-title').innerText = data.title;
+        document.getElementById('modal-body').innerText = data.content;
+        modal.style.display = 'block';
+    }
+}
+
+// 🚀 [마지막 열쇠] 이 줄이 맨 마지막에 있어야 시동이 걸립니다!
+window.addEventListener('load', loadFarmNews);
