@@ -579,3 +579,56 @@ async function submitOrderEdit() {
     btn.disabled = false;
   }
 }
+
+// 시트에서 공지/소식 불러오기
+async function loadFarmNews() {
+    try {
+        const response = await fetch(`${API_URL}?action=getNewsAndStories`);
+        const data = await response.json();
+
+        // 1. 공지사항 표시 (가장 최신 것 1개)
+        if (data.notices && data.notices.length > 0) {
+            const lastNotice = data.notices[0];
+            document.getElementById('notice-bar').style.display = 'flex';
+            document.getElementById('notice-content').innerText = lastNotice.title;
+        }
+
+        // 2. 농장소식(스토리) 표시
+        if (data.stories && data.stories.length > 0) {
+            const storyList = document.getElementById('story-list');
+            document.getElementById('story-section').style.display = 'block';
+            
+            data.stories.forEach(story => {
+                const item = document.createElement('div');
+                item.className = 'story-item';
+                item.innerHTML = `
+                    <img src="${story.imageUrl}" class="story-circle">
+                    <span>${story.title}</span>
+                `;
+                item.onclick = () => openStoryModal(story);
+                storyList.appendChild(item);
+            });
+        }
+    } catch (e) { console.error("소식 로딩 실패:", e); }
+}
+
+// 팝업 열기
+function openStoryModal(story) {
+    document.getElementById('modal-img').src = story.imageUrl;
+    document.getElementById('modal-title').innerText = story.title;
+    document.getElementById('modal-body').innerText = story.content;
+    document.getElementById('story-modal').style.display = 'block';
+}
+
+// 팝업 닫기 로직
+document.querySelector('.close-modal').onclick = () => {
+    document.getElementById('story-modal').style.display = 'none';
+};
+window.onclick = (event) => {
+    if (event.target == document.getElementById('story-modal')) {
+        document.getElementById('story-modal').style.display = 'none';
+    }
+};
+
+// 페이지 로드 시 실행
+window.addEventListener('load', loadFarmNews);
