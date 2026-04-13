@@ -17,7 +17,6 @@ const MOCK_PRODUCTS = [
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchProducts();
-  loadFarmNews();
 });
 
 // --- API FETCH LOGIC ---
