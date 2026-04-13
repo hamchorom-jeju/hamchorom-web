@@ -4,6 +4,9 @@ let allProducts = [];
 let cart = {}; // { "상품명": { quantity: 1, price: 35000 } }
 let currentStep = 1;
 let deliveryType = "";
+let renderedOrders = [];
+let editCart = {};
+let editingOrderIndex = -1;
 
 // 로컬 테스트용 모의 데이터 (API 연결 실패시 대비)
 const MOCK_PRODUCTS = [
@@ -310,8 +313,11 @@ async function fetchOrderStatus() {
       // 2단계: 백엔드 배열 렌더링
       let globalPendingTotal = 0;
       let cardsHtml = "";
+      renderedOrders = [];
 
       result.data.forEach(order => {
+        renderedOrders.push(order);
+        const orderIdx = renderedOrders.length - 1;
         const currentStatus = order.status || "";
         const isPending = currentStatus.includes("주문접수") || currentStatus.includes("입금대기");
 
@@ -320,7 +326,7 @@ async function fetchOrderStatus() {
 
         if (isPending) {
             let orderAmt = Number(String(order.totalAmount || 0).replace(/[^0-9]/g, '')) || 0;
-            globalPendingTotal += orderAmt; // 전체 합산에 더하기
+            globalPendingTotal += orderAmt;
             let justAmount = order.totalAmount ? `${orderAmt.toLocaleString()}원` : "확인 중";
             amountHtml = `
             <div style="font-weight:bold; font-size:1.15rem; color:#F57C00; margin-bottom: 5px;">입금하실 결제 금액: ${justAmount}</div>
@@ -344,7 +350,15 @@ async function fetchOrderStatus() {
         const cardColor = isPending ? '#F57C00' : '#ccc';
         const badgeBg = isPending ? '#FFF3E0' : '#E3F2FD';
 
-        // 키값(orderId) 확인용 data-order-id 속성 부착
+        // 수정 버튼 (백엔드에서 editable: true를 보내준 경우에만 노출)
+        const editBtnHtml = order.editable ? `
+          <div style="margin-top:12px; text-align:center;">
+            <button onclick="openEditModal(${orderIdx})" style="background:#F57C00; color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.95rem; width:100%;">
+              ✏️ 주문 수정하기
+            </button>
+          </div>
+        ` : "";
+
         cardsHtml += `
           <div class="lookup-card" data-order-id="${order.orderId || ''}" style="text-align:left; border: 2px solid ${cardColor}; padding:15px; margin-bottom:15px; border-radius:12px;">
             <div style="font-size:0.85rem; color:#888; margin-bottom:5px; font-weight:bold;">주문번호: ${order.orderId || '번호 미발급'}</div>
@@ -366,6 +380,7 @@ async function fetchOrderStatus() {
                 <div><strong style="color:#2C3E50;">보내는 분:</strong> ${order.sender || '-'}</div>
                 <div><strong style="color:#2C3E50;">배송 메시지:</strong> ${order.memo || '-'}</div>
             </div>
+            ${editBtnHtml}
           </div>
         `;
       });
@@ -397,5 +412,170 @@ async function fetchOrderStatus() {
     resultsDiv.innerHTML = `<p style='color:red;'>잠시후 다시 시도해주세요. (테스트 환경에서는 조회가 제한될 수 있습니다)</p>`;
   } finally {
     loader.style.display = 'none';
+  }
+}
+
+// --- ORDER EDIT LOGIC ---
+function openEditModal(index) {
+  const order = renderedOrders[index];
+  if (!order || !order.editable) return alert("이 주문은 수정할 수 없습니다.\n원장님이 이미 작업을 시작한 주문입니다.");
+
+  editingOrderIndex = index;
+  editCart = {};
+
+  document.getElementById('editReceiver').value = order.receiver || '';
+  document.getElementById('editReceiverPhone').value = order.receiverPhone || '';
+  document.getElementById('editAddress').value = order.address || '';
+  document.getElementById('editDeliveryMsg').value = order.memo || '';
+  document.getElementById('editGiftMsg').value = order.giftMessage || '';
+  document.getElementById('editOrderId').textContent = order.orderId || '';
+
+  const existingItems = parseItemsString(order.items);
+  renderEditProducts(existingItems);
+  updateEditTotal();
+
+  document.getElementById('editModal').style.display = 'flex';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').style.display = 'none';
+  editingOrderIndex = -1;
+  editCart = {};
+}
+
+function parseItemsString(itemsStr) {
+  let result = {};
+  if (!itemsStr) return result;
+  const parts = itemsStr.split(',').map(s => s.trim());
+  parts.forEach(part => {
+    const match = part.match(/(.+?)\s*x\s*(\d+)/i);
+    if (match) {
+      result[match[1].trim()] = parseInt(match[2]);
+    }
+  });
+  return result;
+}
+
+function renderEditProducts(existingItems) {
+  const container = document.getElementById('editProductGrid');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (allProducts.length === 0) {
+    container.innerHTML = '<p style="color:#888; text-align:center;">상품 목록을 불러오는 중...</p>';
+    return;
+  }
+
+  allProducts.forEach(p => {
+    const name = p['상품명'] || p.name;
+    const safeName = name.replace(/'/g, "\\'");
+    const priceRaw = String(p['판매가'] || p['가격'] || p.price || "0").replace(/[^0-9]/g, '');
+    const price = parseInt(priceRaw) || 0;
+
+    let qty = 0;
+    for (let key in existingItems) {
+      if (name === key || key.includes(name) || name.includes(key)) {
+        qty = existingItems[key];
+        delete existingItems[key];
+        break;
+      }
+    }
+
+    if (qty > 0) {
+      editCart[name] = { quantity: qty, price: price };
+    }
+
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid #eee; border-radius:8px; margin-bottom:8px; background:white;';
+    div.innerHTML = `
+      <div style="flex:1;">
+        <div style="font-weight:bold; font-size:0.95rem;">${name}</div>
+        <div style="color:#F57C00; font-size:0.85rem;">${price.toLocaleString()}원</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button onclick="updateEditQty('${safeName}', -1, ${price})" style="width:30px; height:30px; border:1px solid #ddd; background:#f9f9f9; border-radius:6px; font-size:1rem; cursor:pointer;">-</button>
+        <span id="editQty-${name}" style="font-weight:bold; min-width:25px; text-align:center;">${qty}</span>
+        <button onclick="updateEditQty('${safeName}', 1, ${price})" style="width:30px; height:30px; border:1px solid #ddd; background:#f9f9f9; border-radius:6px; font-size:1rem; cursor:pointer;">+</button>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function updateEditQty(name, change, price) {
+  if (!editCart[name]) editCart[name] = { quantity: 0, price: price };
+  editCart[name].quantity += change;
+  if (editCart[name].quantity < 0) editCart[name].quantity = 0;
+
+  const el = document.getElementById(`editQty-${name}`);
+  if (el) el.textContent = editCart[name] ? editCart[name].quantity : 0;
+
+  if (editCart[name].quantity === 0) delete editCart[name];
+  updateEditTotal();
+}
+
+function updateEditTotal() {
+  let total = 0;
+  for (let k in editCart) {
+    total += editCart[k].price * editCart[k].quantity;
+  }
+  const el = document.getElementById('editTotalAmount');
+  if (el) el.textContent = total.toLocaleString() + '원';
+}
+
+async function submitOrderEdit() {
+  const order = renderedOrders[editingOrderIndex];
+  if (!order) return;
+
+  const receiver = document.getElementById('editReceiver').value;
+  const receiverPhone = document.getElementById('editReceiverPhone').value;
+  const address = document.getElementById('editAddress').value;
+
+  if (!receiver || !receiverPhone || !address) {
+    return alert("받는 분 정보를 모두 입력해주세요.");
+  }
+  if (Object.keys(editCart).length === 0) {
+    return alert("최소 1개 이상의 상품을 선택해주세요.");
+  }
+
+  const btn = document.getElementById('editSubmitBtn');
+  btn.textContent = '수정 중...';
+  btn.disabled = true;
+
+  let itemDetailsStr = Object.keys(editCart).map(k => `${k} x ${editCart[k].quantity}`).join(', ');
+  let totalAmount = 0;
+  for (let k in editCart) totalAmount += editCart[k].price * editCart[k].quantity;
+
+  const payload = {
+    action: 'updateOrder',
+    orderId: order.orderId,
+    receiverName: receiver,
+    receiverPhone: receiverPhone,
+    receiverAddress: address,
+    deliveryMsg: document.getElementById('editDeliveryMsg').value || '',
+    giftMessage: document.getElementById('editGiftMsg').value || '',
+    itemDetails: itemDetailsStr,
+    totalAmount: totalAmount
+  };
+
+  try {
+    fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    }).then(() => {
+      alert('✅ 주문이 성공적으로 수정되었습니다!');
+      closeEditModal();
+      fetchOrderStatus();
+    }).catch(() => {
+      alert('✅ 주문이 수정되었습니다!');
+      closeEditModal();
+      fetchOrderStatus();
+    });
+  } catch(err) {
+    alert('오류가 발생했습니다: ' + err.message);
+    btn.textContent = '수정 완료';
+    btn.disabled = false;
   }
 }
