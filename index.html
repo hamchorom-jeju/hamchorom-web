@@ -185,6 +185,50 @@
     </div>
   </div>
 
+  <!-- Order Edit Modal -->
+  <div class="lookup-overlay" id="editModal">
+    <div class="lookup-box" style="max-width:600px;">
+      <button class="close-btn" onclick="closeEditModal()"><i data-lucide="x"></i></button>
+      <h2>✏️ 주문 수정</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:15px;">주문번호: <strong id="editOrderId"></strong></p>
+
+      <div class="form-group">
+        <label>받는 분 성함 *</label>
+        <input type="text" id="editReceiver">
+      </div>
+      <div class="form-group">
+        <label>받는 분 연락처 *</label>
+        <input type="tel" id="editReceiverPhone" placeholder="숫자만 입력 (예: 01012345678)">
+      </div>
+      <div class="form-group">
+        <label>배송지 주소 *</label>
+        <textarea id="editAddress" rows="2"></textarea>
+      </div>
+
+      <h3 style="margin-top:20px; margin-bottom:10px; font-size:1rem; color:#F57C00;">🍊 상품 선택 (수량 변경)</h3>
+      <div id="editProductGrid" style="max-height:200px; overflow-y:auto; padding:5px;"></div>
+
+      <div style="background:#FFF3E0; padding:15px; border-radius:8px; margin-top:15px; text-align:center;">
+        <span style="font-size:0.9rem; color:#555;">수정된 결제 금액</span>
+        <div id="editTotalAmount" style="font-size:1.4rem; font-weight:bold; color:#F57C00; margin-top:5px;">0원</div>
+      </div>
+
+      <div class="form-group" style="margin-top:15px;">
+        <label>배송 메시지</label>
+        <input type="text" id="editDeliveryMsg">
+      </div>
+      <div class="form-group">
+        <label>선물 메시지 💌</label>
+        <textarea id="editGiftMsg" rows="2"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="action-btn outline-btn" onclick="closeEditModal()">취소</button>
+        <button class="action-btn confirm-btn" id="editSubmitBtn" onclick="submitOrderEdit()">수정 완료</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
   <script>lucide.createIcons();</script>
 </body>
