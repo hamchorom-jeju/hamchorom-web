@@ -581,9 +581,11 @@ async function submitOrderEdit() {
 }
 
 async function loadFarmNews() {
+  console.log("📢 지금 데이터를 가져오려고 시도합니다!");
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
         let res = await response.json();
+      console.log("📢 서버에서 받은 데이터:", res); // 이 줄 추가
         let data = res.data || res; 
 
         // 1. 공지사항 로직 (클릭 연동 보강)
