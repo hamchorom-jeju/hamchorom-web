@@ -580,81 +580,68 @@ async function submitOrderEdit() {
   }
 }
 
-// 1. 농장소식 및 공지사항 로딩 엔진
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
-        let data = await response.json();
-        if (data.data) data = data.data; 
+        let res = await response.json();
+        
+        // 🍊 [주머니 열기] 어떤 구조로 오든 대응
+        let data = res.data || res; 
 
-        // [공지사항 섹션] - 사진 경로를 시트 데이터(notice.imageUrl)와 정확히 매칭
-        if (data.notices && data.notices.length > 0) {
-            const notice = data.notices[0];
+        // 1. 공지사항 (클릭 시 팝업 연동)
+        const notices = data.notices || data.noticeList || [];
+        if (notices.length > 0) {
+            const notice = notices[0];
             const bar = document.getElementById('notice-bar');
             const content = document.getElementById('notice-content');
             if (bar && content) {
                 bar.style.display = 'flex';
                 bar.style.cursor = 'pointer';
-                content.innerText = notice.title;
+                content.innerText = notice.title || notice.subject || "공지사항";
                 
-                // 🍊 시트 D열(imageUrl)에 있는 사진을 팝업에 띄웁니다.
-                let raw = notice.imageUrl || "";
+                // 🍊 공지 전용 이미지 ID 추출
+                let raw = notice.imageUrl || notice.image || "";
                 let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
                 const finalNoticeImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=w800` : raw;
 
                 bar.onclick = () => openStoryModal({
                     imageUrl: finalNoticeImg,
-                    title: notice.title,
-                    content: notice.content
+                    title: notice.title || notice.subject,
+                    content: notice.content || notice.body
                 });
             }
         }
 
-        // [농장소식 섹션] - 원형 이미지 엑박 해결 및 1:1 사진 매칭
-        if (data.stories && data.stories.length > 0) {
+        // 2. 농장소식 (원형 이미지 엑박 해결)
+        const stories = data.stories || data.storyList || [];
+        if (stories.length > 0) {
             const list = document.getElementById('story-list');
             if (list) {
                 document.getElementById('story-section').style.display = 'block';
                 list.innerHTML = ''; 
-                data.stories.forEach(story => {
-                    let raw = story.imageUrl || "";
+                stories.forEach(story => {
+                    let raw = story.imageUrl || story.image || "";
                     let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
-                    
-                    // 🍊 엑박 방지를 위해 썸네일 주소로 강제 변환
                     const finalImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : raw;
 
                     const item = document.createElement('div');
                     item.className = 'story-item';
                     item.innerHTML = `
                         <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
-                        <span>${story.title}</span>
+                        <span>${story.title || story.subject || "농장소식"}</span>
                     `;
-                    // 🍊 클릭 시 해당 스토리의 사진만 팝업에 전달
-                    item.onclick = () => openStoryModal({ ...story, imageUrl: finalImg });
+                    // 🍊 클릭 시 해당 데이터 전송 (이미지 주소 포함)
+                    item.onclick = () => openStoryModal({
+                        title: story.title || story.subject,
+                        content: story.content || story.body,
+                        imageUrl: finalImg
+                    });
                     list.appendChild(item);
                 });
             }
         }
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
-
-// 2. 상세보기 팝업 엔진 (이미지 엑박 및 닫기 연동)
-function openStoryModal(data) {
-    const modal = document.getElementById('story-modal');
-    if (modal) {
-        const modalImg = document.getElementById('modal-img');
-        const modalTitle = document.getElementById('modal-title');
-        const modalBody = document.getElementById('modal-body');
-        
-        if (modalImg) modalImg.src = data.imageUrl;
-        if (modalTitle) modalTitle.innerText = data.title;
-        if (modalBody) modalBody.innerText = data.content;
-        
-        modal.style.display = 'block';
-    }
-}
-
-// 3. 팝업 닫기 로직 (X 버튼 및 배경 클릭 시 닫기)
 document.addEventListener('click', (e) => {
     const modal = document.getElementById('story-modal');
     // 클릭한 대상이 close-modal 클래스(X버튼)이거나 모달 배경일 경우 닫음
