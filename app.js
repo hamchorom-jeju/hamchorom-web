@@ -612,7 +612,43 @@ async function loadFarmNews() {
             }
         }
 
-        // [농장소식 섹션] - 중앙 정렬 및 엑박 해결
+ // 1. 농장소식 및 공지사항 로딩 엔진
+async function loadFarmNews() {
+    try {
+        const response = await fetch(`${API_URL}?action=getNewsAndStories`);
+        let res = await response.json();
+        let data = res.data || res; 
+
+        // [공지사항 섹션]
+        const notices = data.notices || [];
+        if (notices.length > 0) {
+            const notice = notices[0];
+            const bar = document.getElementById('notice-bar');
+            const content = document.getElementById('notice-content');
+            if (bar && content) {
+                bar.style.display = 'flex';
+                bar.style.cursor = 'pointer';
+                content.innerText = notice.title || "공지사항";
+                
+                // 🍊 어떤 링크든 ID만 있으면 추출 (가장 강력한 버전)
+                let raw = notice.imageUrl || "";
+                let fId = "";
+                let m = raw.match(/id=([^&]+)/) || raw.match(/\/d\/([^/]+)/);
+                if (m) fId = m[1];
+
+                const finalNoticeImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w800` : "";
+
+                bar.onclick = function() {
+                    openStoryModal({
+                        imageUrl: finalNoticeImg,
+                        title: notice.title,
+                        content: notice.content
+                    });
+                };
+            }
+        }
+
+        // [농장소식 섹션]
         const stories = data.stories || [];
         if (stories.length > 0) {
             const section = document.getElementById('story-section');
@@ -620,20 +656,24 @@ async function loadFarmNews() {
             if (section && list) {
                 section.style.display = 'block';
                 list.style.display = 'flex';
-                list.style.justifyContent = 'center'; // 노트북 대화면 중앙 정렬
+                list.style.justifyContent = 'center'; 
                 list.style.gap = '20px';
                 list.style.flexWrap = 'wrap';
                 
                 list.innerHTML = ''; 
                 stories.forEach(story => {
                     let raw = story.imageUrl || "";
-                    let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1];
-                    const finalImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : "";
+                    let fId = "";
+                    let m = raw.match(/id=([^&]+)/) || raw.match(/\/d\/([^/]+)/);
+                    if (m) fId = m[1];
+
+                    // 🍊 ID가 있으면 구글 썸네일로, 없으면 원본 주소 그대로 사용
+                    const finalImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : raw;
 
                     const item = document.createElement('div');
                     item.className = 'story-item';
                     item.innerHTML = `
-                        <img src="${finalImg || 'https://via.placeholder.com/150?text=Hamchorom'}" class="story-circle">
+                        <img src="${finalImg || 'https://via.placeholder.com/150?text=Hamchorom'}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Error'">
                         <span>${story.title || "농장소식"}</span>
                     `;
                     
@@ -651,18 +691,18 @@ async function loadFarmNews() {
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
 
-// 2. 상세보기 팝업 엔진 (이미지가 없을 때 처리 추가)
+// 2. 상세보기 팝업 엔진
 function openStoryModal(data) {
     const modal = document.getElementById('story-modal');
     if (modal) {
         const modalImg = document.getElementById('modal-img');
         
-        // 🍊 이미지가 있으면 보여주고, 없으면 아예 숨겨서 엑박 방지
-        if (data.imageUrl && data.imageUrl.trim() !== "") {
+        // 이미지가 유효할 때만 노출
+        if (data.imageUrl && data.imageUrl.length > 10) {
             modalImg.src = data.imageUrl;
             modalImg.style.display = 'block';
         } else {
-            modalImg.style.display = 'none'; // 엑박 방지를 위해 숨김
+            modalImg.style.display = 'none';
         }
 
         document.getElementById('modal-title').innerText = data.title || "";
