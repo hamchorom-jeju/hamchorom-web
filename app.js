@@ -17,6 +17,7 @@ const MOCK_PRODUCTS = [
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchProducts();
+  loadFarmNews();
 });
 
 // --- API FETCH LOGIC ---
@@ -580,43 +581,50 @@ async function submitOrderEdit() {
   }
 }
 
-// [app.js 하단에 위치해야 함] 시트에서 공지/소식 불러오기
+// [app.js 하단] 농장소식 & 공지사항 엔진 (원본 설계 보존 + ID 추출 강화)
 async function loadFarmNews() {
+    console.log("농장 소식 로딩 시작...");
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
         const data = await response.json();
 
-        // 1. 공지사항 표시 (가장 최신 것 1개)
+        // 1. 공지사항 표시 (클릭 시 상세내용 팝업 연동)
         if (data.notices && data.notices.length > 0) {
             const lastNotice = data.notices[0];
             const noticeBar = document.getElementById('notice-bar');
             const noticeContent = document.getElementById('notice-content');
             
-            if (noticeBar) {
+            if (noticeBar && noticeContent) {
                 noticeBar.style.display = 'flex';
-                noticeBar.style.cursor = 'pointer';
+                noticeBar.style.cursor = 'pointer'; 
                 noticeContent.innerText = lastNotice.title;
-                noticeBar.onclick = () => openStoryModal({
-                    imageUrl: "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500",
-                    title: lastNotice.title,
-                    content: lastNotice.content
-                });
+                
+                // 공지사항 클릭 시 팝업 열기 로직 추가
+                noticeBar.onclick = () => {
+                    openStoryModal({
+                        imageUrl: "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500",
+                        title: lastNotice.title,
+                        content: lastNotice.content
+                    });
+                };
             }
         }
 
-        // 2. 농장소식(스토리) 표시
+        // 2. 농장소식(스토리) 표시 (이미지 ID 추출 강화)
         if (data.stories && data.stories.length > 0) {
             const storyList = document.getElementById('story-list');
             if (storyList) {
                 document.getElementById('story-section').style.display = 'block';
-                storyList.innerHTML = '';
+                storyList.innerHTML = ''; 
                 
                 data.stories.forEach(story => {
-                    // 🍊 사진 깨짐 방지: 어떤 링크에서도 ID만 추출
+                    // 🍊 [핵심 수정] 어떤 형식이든 ID만 쏙 뽑아내는 정규식
                     let fileId = "";
-                    const idMatch = story.imageUrl.match(/id=([^&]+)/) || story.imageUrl.match(/\/d\/([^/]+)/);
-                    if (idMatch) fileId = idMatch[1];
-                    
+                    const regex = /[?&]id=([^&]+)|(?:\/d\/|src=".*?id=)([^"&?\/]+)/;
+                    const match = story.imageUrl.match(regex);
+                    if (match) fileId = match[1] || match[2];
+
+                    // 웹앱 전용 썸네일 주소로 재생성
                     const finalImgUrl = fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w500` : story.imageUrl;
 
                     const item = document.createElement('div');
@@ -625,7 +633,11 @@ async function loadFarmNews() {
                         <img src="${finalImgUrl}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
                         <span>${story.title}</span>
                     `;
-                    item.onclick = () => openStoryModal({ ...story, imageUrl: finalImgUrl });
+                    item.onclick = () => openStoryModal({
+                        imageUrl: finalImgUrl,
+                        title: story.title,
+                        content: story.content
+                    });
                     storyList.appendChild(item);
                 });
             }
@@ -633,13 +645,13 @@ async function loadFarmNews() {
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
 
-// 팝업 열기/닫기 로직 (원장님의 모달 설계 보존)
-function openStoryModal(story) {
+// 팝업 열기 (원장님의 모달 ID 보존)
+function openStoryModal(data) {
     const modal = document.getElementById('story-modal');
     if (modal) {
-        document.getElementById('modal-img').src = story.imageUrl;
-        document.getElementById('modal-title').innerText = story.title;
-        document.getElementById('modal-body').innerText = story.content;
+        document.getElementById('modal-img').src = data.imageUrl;
+        document.getElementById('modal-title').innerText = data.title;
+        document.getElementById('modal-body').innerText = data.content;
         modal.style.display = 'block';
     }
 }
