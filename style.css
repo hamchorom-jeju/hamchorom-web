@@ -41,7 +41,7 @@ header {
 /* Hero */
 .hero {
   position: relative; height: 35vh; min-height: 250px;
-  background: url('https://images.unsplash.com/photo-1557800636-894a64c1696f?auto=format&fit=crop&w=1000&q=80') center/cover;
+  background: url('https://lh3.googleusercontent.com/d/155gK7D1jDLwXWcyAp30NzyN4w2m7LcT_') center/cover;
   display: flex; align-items: center; justify-content: center; text-align: center;
 }
 .hero-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
