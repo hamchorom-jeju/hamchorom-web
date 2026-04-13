@@ -16,7 +16,9 @@ const MOCK_PRODUCTS = [
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
-  fetchProducts();
+  fetchProducts().then(() => {
+    loadFarmNews(); // 상품 로딩이 완전히 끝난 후 소식통 시동!
+  });
 });
 
 // --- API FETCH LOGIC ---
@@ -580,77 +582,57 @@ async function submitOrderEdit() {
   }
 }
 
-// [app.js 하단] 농장소식 & 공지사항 엔진 (원본 설계 보존 + ID 추출 강화)
 async function loadFarmNews() {
-    console.log("농장 소식 로딩 시작...");
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
         const data = await response.json();
 
-        // 1. 공지사항 표시 (클릭 시 상세내용 팝업 연동)
+        // 1. 공지사항 로직
         if (data.notices && data.notices.length > 0) {
-            const lastNotice = data.notices[0];
-            const noticeBar = document.getElementById('notice-bar');
-            const noticeContent = document.getElementById('notice-content');
-            
-            if (noticeBar && noticeContent) {
-                noticeBar.style.display = 'flex';
-                noticeBar.style.cursor = 'pointer'; 
-                noticeContent.innerText = lastNotice.title;
-                
-                // 공지사항 클릭 시 팝업 열기 로직 추가
-                noticeBar.onclick = () => {
-                    openStoryModal({
-                        imageUrl: "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500",
-                        title: lastNotice.title,
-                        content: lastNotice.content
-                    });
-                };
+            const notice = data.notices[0];
+            const bar = document.getElementById('notice-bar');
+            const content = document.getElementById('notice-content');
+            if (bar && content) {
+                bar.style.display = 'flex';
+                bar.style.cursor = 'pointer';
+                content.innerText = notice.title;
+                bar.onclick = () => openStoryModal({
+                    imageUrl: "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500",
+                    title: notice.title,
+                    content: notice.content
+                });
             }
         }
 
-        // 2. 농장소식(스토리) 표시 (이미지 ID 추출 강화)
+        // 2. 스토리 로직 (이미지 처리 강화)
         if (data.stories && data.stories.length > 0) {
-            const storyList = document.getElementById('story-list');
-            if (storyList) {
-                document.getElementById('story-section').style.display = 'block';
-                storyList.innerHTML = ''; 
-                
+            const list = document.getElementById('story-list');
+            const section = document.getElementById('story-section');
+            if (section) section.style.display = 'block';
+            if (list) {
+                list.innerHTML = '';
                 data.stories.forEach(story => {
-                    // 🍊 [핵심 수정] 어떤 형식이든 ID만 쏙 뽑아내는 정규식
-                    let fileId = "";
-                    const regex = /[?&]id=([^&]+)|(?:\/d\/|src=".*?id=)([^"&?\/]+)/;
-                    const match = story.imageUrl.match(regex);
-                    if (match) fileId = match[1] || match[2];
-
-                    // 웹앱 전용 썸네일 주소로 재생성
-                    const finalImgUrl = fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w500` : story.imageUrl;
+                    // 🍊 ID만 있든 주소 전체든 무조건 작동하게 보정
+                    let fId = story.imageUrl; 
+                    if (fId.includes('id=')) fId = fId.split('id=')[1].split('&')[0];
+                    else if (fId.includes('/d/')) fId = fId.split('/d/')[1].split('/')[0];
+                    
+                    const finalImg = fId.length > 20 ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : story.imageUrl;
 
                     const item = document.createElement('div');
                     item.className = 'story-item';
                     item.innerHTML = `
-                        <img src="${finalImgUrl}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
+                        <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
                         <span>${story.title}</span>
                     `;
                     item.onclick = () => openStoryModal({
-                        imageUrl: finalImgUrl,
+                        imageUrl: finalImg,
                         title: story.title,
                         content: story.content
                     });
-                    storyList.appendChild(item);
+                    list.appendChild(item);
                 });
             }
         }
-    } catch (e) { console.error("소식 로딩 실패:", e); }
-}
-
-// 팝업 열기 (원장님의 모달 ID 보존)
-function openStoryModal(data) {
-    const modal = document.getElementById('story-modal');
-    if (modal) {
-        document.getElementById('modal-img').src = data.imageUrl;
-        document.getElementById('modal-title').innerText = data.title;
-        document.getElementById('modal-body').innerText = data.content;
-        modal.style.display = 'block';
-    }
+    } catch (e) { console.error("로딩 실패", e); }
 }
