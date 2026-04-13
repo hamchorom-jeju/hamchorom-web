@@ -16,9 +16,7 @@ const MOCK_PRODUCTS = [
 ];
 
 document.addEventListener("DOMContentLoaded", () => {
-  fetchProducts().then(() => {
-    loadFarmNews(); // 상품 로딩이 완전히 끝난 후 소식통 시동!
-  });
+  fetchProducts();
 });
 
 // --- API FETCH LOGIC ---
@@ -582,12 +580,13 @@ async function submitOrderEdit() {
   }
 }
 
+// [app.js 맨 하단] 원장님, 이 함수 본체만 갈아끼우세요. 시동 코드는 절대 추가하지 마세요!
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
         const data = await response.json();
 
-        // 1. 공지사항 로직
+        // 1. 공지사항 (클릭 시 팝업 연동)
         if (data.notices && data.notices.length > 0) {
             const notice = data.notices[0];
             const bar = document.getElementById('notice-bar');
@@ -596,6 +595,7 @@ async function loadFarmNews() {
                 bar.style.display = 'flex';
                 bar.style.cursor = 'pointer';
                 content.innerText = notice.title;
+                // 🍊 원장님, 여기서 상세내용 팝업을 연결합니다.
                 bar.onclick = () => openStoryModal({
                     imageUrl: "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500",
                     title: notice.title,
@@ -604,20 +604,18 @@ async function loadFarmNews() {
             }
         }
 
-        // 2. 스토리 로직 (이미지 처리 강화)
+        // 2. 농장소식 (이미지 ID 추출 보정)
         if (data.stories && data.stories.length > 0) {
             const list = document.getElementById('story-list');
-            const section = document.getElementById('story-section');
-            if (section) section.style.display = 'block';
             if (list) {
-                list.innerHTML = '';
+                document.getElementById('story-section').style.display = 'block';
+                list.innerHTML = ''; 
                 data.stories.forEach(story => {
-                    // 🍊 ID만 있든 주소 전체든 무조건 작동하게 보정
-                    let fId = story.imageUrl; 
-                    if (fId.includes('id=')) fId = fId.split('id=')[1].split('&')[0];
-                    else if (fId.includes('/d/')) fId = fId.split('/d/')[1].split('/')[0];
-                    
-                    const finalImg = fId.length > 20 ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : story.imageUrl;
+                    // 🍊 주소 전체에서 ID만 쏙 뽑아내서 엑박을 방지합니다.
+                    let raw = story.imageUrl || "";
+                    let fId = raw.match(/id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
+
+                    const finalImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : raw;
 
                     const item = document.createElement('div');
                     item.className = 'story-item';
@@ -625,14 +623,11 @@ async function loadFarmNews() {
                         <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
                         <span>${story.title}</span>
                     `;
-                    item.onclick = () => openStoryModal({
-                        imageUrl: finalImg,
-                        title: story.title,
-                        content: story.content
-                    });
+                    // 🍊 스토리 클릭 시 상세보기 연결
+                    item.onclick = () => openStoryModal({ ...story, imageUrl: finalImg });
                     list.appendChild(item);
                 });
             }
         }
-    } catch (e) { console.error("로딩 실패", e); }
+    } catch (e) { console.error("소식 로딩 실패:", e); }
 }
