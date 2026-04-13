@@ -583,6 +583,7 @@ async function submitOrderEdit() {
 // --- 원장님의 성역 (allProducts, fetchProducts 등 상단 로직 100% 보존) ---
 
 // 1. 농장소식 및 공지사항 로딩 엔진 (이미지 추출 로직만 강화)
+// 1. 농장소식 및 공지사항 로딩 엔진 (어떤 링크든 100% 띄우는 만능 로직)
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
@@ -600,13 +601,17 @@ async function loadFarmNews() {
                 bar.style.cursor = 'pointer';
                 content.innerText = notice.title || "공지사항";
                 
-                // 🍊 어떤 링크든 ID만 있으면 추출하는 가장 확실한 방법으로 보정
                 let raw = notice.imageUrl || "";
-                let fId = "";
-                if (raw.includes('id=')) fId = raw.split('id=')[1].split('&')[0];
-                else if (raw.includes('/d/')) fId = raw.split('/d/')[1].split('/')[0];
+                let finalNoticeImg = "";
 
-                const finalNoticeImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w800` : "";
+                // 🍊 [핵심] 이미 완성된 썸네일 링크면 그대로 쓰고, 아니면 ID 추출
+                if (raw.includes('thumbnail?id=')) {
+                    finalNoticeImg = raw; 
+                } else if (raw.includes('id=')) {
+                    finalNoticeImg = `https://drive.google.com/thumbnail?id=${raw.split('id=')[1].split('&')[0]}&sz=w800`;
+                } else if (raw.includes('/d/')) {
+                    finalNoticeImg = `https://drive.google.com/thumbnail?id=${raw.split('/d/')[1].split('/')[0]}&sz=w800`;
+                }
 
                 bar.onclick = function() {
                     openStoryModal({
@@ -633,11 +638,18 @@ async function loadFarmNews() {
                 list.innerHTML = ''; 
                 stories.forEach(story => {
                     let raw = story.imageUrl || "";
-                    let fId = "";
-                    if (raw.includes('id=')) fId = raw.split('id=')[1].split('&')[0];
-                    else if (raw.includes('/d/')) fId = raw.split('/d/')[1].split('/')[0];
-
-                    const finalImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : (raw || 'https://via.placeholder.com/150?text=Hamchorom');
+                    let finalImg = "https://via.placeholder.com/150?text=Hamchorom";
+                    
+                    // 🍊 [핵심] 원장님이 주신 썸네일 링크를 1순위로 처리
+                    if (raw.includes('thumbnail?id=')) {
+                        finalImg = raw;
+                    } else if (raw.includes('id=')) {
+                        finalImg = `https://drive.google.com/thumbnail?id=${raw.split('id=')[1].split('&')[0]}&sz=w500`;
+                    } else if (raw.includes('/d/')) {
+                        finalImg = `https://drive.google.com/thumbnail?id=${raw.split('/d/')[1].split('/')[0]}&sz=w500`;
+                    } else if (raw.length > 10) {
+                        finalImg = raw;
+                    }
 
                     const item = document.createElement('div');
                     item.className = 'story-item';
@@ -647,10 +659,12 @@ async function loadFarmNews() {
                     `;
                     
                     item.onclick = function() {
+                        // 팝업 시에는 더 큰 사이즈로 변환 시도 (이미 썸네일 링크면 sz값만 교체)
+                        let popupImg = finalImg.replace('sz=w500', 'sz=w800').replace('sz=w1000', 'sz=w800');
                         openStoryModal({
                             title: story.title,
                             content: story.content,
-                            imageUrl: fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w800` : raw
+                            imageUrl: popupImg
                         });
                     };
                     list.appendChild(item);
