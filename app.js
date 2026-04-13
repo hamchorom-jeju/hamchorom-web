@@ -583,10 +583,12 @@ async function submitOrderEdit() {
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
-       let data = await response.json(); // const를 let으로 바꿔야 값을 덮어쓸 수 있습니다.
-if (data.data) data = data.data;
+        let data = await response.json();
+        
+        // 데이터 주머니 열기
+        if (data.data) data = data.data; 
 
-        // 1. 공지사항 로직 (클릭 시 팝업 연동 포함)
+        // 1. [공지사항 로직] - 공지사항 전용 이미지를 쓰도록 고정
         if (data.notices && data.notices.length > 0) {
             const notice = data.notices[0];
             const bar = document.getElementById('notice-bar');
@@ -595,25 +597,31 @@ if (data.data) data = data.data;
                 bar.style.display = 'flex';
                 bar.style.cursor = 'pointer';
                 content.innerText = notice.title;
-                // 공지 클릭 시 상세보기 팝업 실행
+
+                // 🍊 원장님, 공지사항을 눌렀을 때 팝업에 띄울 '공지 전용 이미지'입니다.
+                // 만약 시트에 공지 이미지가 따로 없다면 기본 농장 이미지를 사용합니다.
+                const noticeImg = notice.imageUrl || "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500";
+                
                 bar.onclick = () => openStoryModal({
-                    imageUrl: "https://drive.google.com/thumbnail?id=1we1fXFJamRsf5BehxgoZlESSRlOOXH9B&sz=w500",
+                    imageUrl: noticeImg,
                     title: notice.title,
                     content: notice.content
                 });
             }
         }
 
-        // 2. 농장소식 로직 (이미지 ID 추출 강화 + 상세보기 연동)
+        // 2. [농장소식 로직] - 스토리 각각의 사진을 정확히 매칭
         if (data.stories && data.stories.length > 0) {
             const list = document.getElementById('story-list');
             if (list) {
                 document.getElementById('story-section').style.display = 'block';
                 list.innerHTML = ''; 
                 data.stories.forEach(story => {
-                    // 🍊 주소 전체에서 ID만 정확히 뽑아내어 엑박 방지
+                    // 🍊 스토리 각각의 사진 ID를 추출합니다.
                     let raw = story.imageUrl || "";
                     let fId = raw.match(/id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
+                    
+                    // ID가 너무 짧으면(ID가 아님) 원본 주소를 그대로 사용하고, ID면 썸네일 주소를 만듭니다.
                     const finalImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : raw;
 
                     const item = document.createElement('div');
@@ -622,25 +630,15 @@ if (data.data) data = data.data;
                         <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
                         <span>${story.title}</span>
                     `;
-                    // 스토리 클릭 시 상세보기 팝업 실행
-                    item.onclick = () => openStoryModal({ ...story, imageUrl: finalImg });
+                    
+                    // 🍊 스토리를 눌렀을 때, 해당 스토리의 사진(finalImg)이 팝업에 뜨도록 연결
+                    item.onclick = () => openStoryModal({ 
+                        ...story, 
+                        imageUrl: finalImg 
+                    });
                     list.appendChild(item);
                 });
             }
         }
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
-
-// 🖼️ [중요] 이 함수도 loadFarmNews 바로 아래에 있는지 꼭 확인하세요!
-function openStoryModal(data) {
-    const modal = document.getElementById('story-modal');
-    if (modal) {
-        document.getElementById('modal-img').src = data.imageUrl;
-        document.getElementById('modal-title').innerText = data.title;
-        document.getElementById('modal-body').innerText = data.content;
-        modal.style.display = 'block';
-    }
-}
-
-// 🚀 [마지막 열쇠] 이 줄이 맨 마지막에 있어야 시동이 걸립니다!
-window.addEventListener('load', loadFarmNews);
