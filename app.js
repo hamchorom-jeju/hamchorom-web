@@ -679,25 +679,42 @@ async function loadFarmNews() {
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
 
-// 2. 상세보기 팝업 엔진 (상단 여백 40px 보존)
+// 2. 상세보기 팝업 엔진 (상단 여백 및 겹침 방지 정밀 보정)
 function openStoryModal(data) {
     const modal = document.getElementById('story-modal');
     if (modal) {
         const modalImg = document.getElementById('modal-img');
         const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
         
+        // 🍊 [핵심] 이미지가 있든 없든 닫기(X) 버튼 영역을 침범하지 않게 기본 여백 설정
+        // 모달 내부 컨테이너의 상단 패딩을 조정하거나, 첫 요소에 마진을 줍니다.
+        modalTitle.style.marginTop = "0px"; 
+        modalImg.style.marginTop = "0px";
+
         if (data.imageUrl && data.imageUrl.length > 20) {
             modalImg.src = data.imageUrl;
             modalImg.style.display = 'block';
+            modalImg.style.width = '100%';
+            modalImg.style.borderRadius = '8px';
             modalImg.style.marginBottom = "15px";
-            modalTitle.style.marginTop = "10px"; 
+            
+            // 🍊 이미지가 있을 때: X 버튼과 겹치지 않게 이미지 위에 여백 40px 부여
+            modalImg.style.marginTop = "40px"; 
+            modalTitle.style.marginTop = "10px";
         } else {
             modalImg.style.display = 'none';
-            modalTitle.style.marginTop = "40px"; // X 버튼 겹침 방지
+            // 🍊 이미지가 없을 때: 제목이 X 버튼과 겹치지 않게 제목 위에 여백 50px 부여
+            modalTitle.style.marginTop = "50px";
         }
 
-        document.getElementById('modal-title').innerText = data.title || "";
-        document.getElementById('modal-body').innerText = data.content || "";
+        modalTitle.innerText = data.title || "";
+        modalBody.innerText = data.content || "";
+        
+        // 줄바꿈 보존을 위해 스타일 살짝 보강
+        modalBody.style.whiteSpace = "pre-wrap";
+        modalBody.style.lineHeight = "1.6";
+        
         modal.style.display = 'block';
     }
 }
