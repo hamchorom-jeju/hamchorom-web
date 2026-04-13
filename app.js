@@ -579,16 +579,14 @@ async function submitOrderEdit() {
     btn.disabled = false;
   }
 }
-
+// 1. 농장소식 및 공지사항 로딩 엔진
 async function loadFarmNews() {
-  console.log("📢 지금 데이터를 가져오려고 시도합니다!");
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
         let res = await response.json();
-      console.log("📢 서버에서 받은 데이터:", res); // 이 줄 추가
         let data = res.data || res; 
 
-        // 1. 공지사항 로직 (클릭 연동 보강)
+        // [공지사항 섹션]
         const notices = data.notices || [];
         if (notices.length > 0) {
             const notice = notices[0];
@@ -599,14 +597,14 @@ async function loadFarmNews() {
                 bar.style.cursor = 'pointer';
                 content.innerText = notice.title || "공지사항";
                 
+                // 🍊 이미지 ID 추출 및 변환
                 let raw = notice.imageUrl || "";
-                let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
-                const finalNoticeImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=800` : raw;
+                let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1];
+                const finalNoticeImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w800` : "";
 
-                // 🍊 클릭 이벤트 확실히 바인딩
                 bar.onclick = function() {
                     openStoryModal({
-                        imageUrl: finalNoticeImg,
+                        imageUrl: finalNoticeImg, // 없으면 빈값 전달
                         title: notice.title,
                         content: notice.content
                     });
@@ -614,34 +612,31 @@ async function loadFarmNews() {
             }
         }
 
-        // 2. 농장소식 로직 (중앙 정렬 및 클릭 복구)
+        // [농장소식 섹션] - 중앙 정렬 및 엑박 해결
         const stories = data.stories || [];
         if (stories.length > 0) {
             const section = document.getElementById('story-section');
             const list = document.getElementById('story-list');
             if (section && list) {
                 section.style.display = 'block';
-                // 🍊 노트북 등 대화면에서 스토리가 적을 때 중앙 정렬되도록 스타일 추가
                 list.style.display = 'flex';
-                list.style.justifyContent = 'center'; 
+                list.style.justifyContent = 'center'; // 노트북 대화면 중앙 정렬
                 list.style.gap = '20px';
                 list.style.flexWrap = 'wrap';
                 
                 list.innerHTML = ''; 
                 stories.forEach(story => {
                     let raw = story.imageUrl || "";
-                    let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1] || raw;
-                    const finalImg = (fId.length > 20) ? `https://drive.google.com/thumbnail?id=${fId}&sz=500` : raw;
+                    let fId = raw.match(/[?&]id=([^&]+)/)?.[1] || raw.match(/\/d\/([^/]+)/)?.[1];
+                    const finalImg = fId ? `https://drive.google.com/thumbnail?id=${fId}&sz=w500` : "";
 
                     const item = document.createElement('div');
                     item.className = 'story-item';
-                    item.style.cursor = 'pointer'; // 클릭 가능 표시
                     item.innerHTML = `
-                        <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Hamchorom'">
+                        <img src="${finalImg || 'https://via.placeholder.com/150?text=Hamchorom'}" class="story-circle">
                         <span>${story.title || "농장소식"}</span>
                     `;
                     
-                    // 🍊 익명 함수로 클릭 이벤트 확실히 연결
                     item.onclick = function() {
                         openStoryModal({
                             title: story.title,
@@ -656,17 +651,25 @@ async function loadFarmNews() {
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
 
-// 3. 상세보기 팝업 엔진 (함수명 및 로직 재점검)
+// 2. 상세보기 팝업 엔진 (이미지가 없을 때 처리 추가)
 function openStoryModal(data) {
     const modal = document.getElementById('story-modal');
     if (modal) {
-        document.getElementById('modal-img').src = data.imageUrl || "";
+        const modalImg = document.getElementById('modal-img');
+        
+        // 🍊 이미지가 있으면 보여주고, 없으면 아예 숨겨서 엑박 방지
+        if (data.imageUrl && data.imageUrl.trim() !== "") {
+            modalImg.src = data.imageUrl;
+            modalImg.style.display = 'block';
+        } else {
+            modalImg.style.display = 'none'; // 엑박 방지를 위해 숨김
+        }
+
         document.getElementById('modal-title').innerText = data.title || "";
         document.getElementById('modal-body').innerText = data.content || "";
         modal.style.display = 'block';
     }
 }
-
 // 4. 팝업 닫기 (이게 있어야 X 눌렀을 때 닫힙니다)
 document.addEventListener('click', function(e) {
     const modal = document.getElementById('story-modal');
