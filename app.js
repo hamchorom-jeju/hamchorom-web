@@ -583,7 +583,7 @@ async function submitOrderEdit() {
 // --- 원장님의 성역 (allProducts, fetchProducts 등 상단 로직 100% 보존) ---
 
 // 1. 농장소식 및 공지사항 로딩 엔진 (이미지 추출 로직만 강화)
-// 1. 농장소식 및 공지사항 로딩 엔진 (어떤 링크든 100% 띄우는 만능 로직)
+// 1. 농장소식 및 공지사항 로딩 엔진 (이미지 주소 판별 로직 최적화)
 async function loadFarmNews() {
     try {
         const response = await fetch(`${API_URL}?action=getNewsAndStories`);
@@ -604,9 +604,9 @@ async function loadFarmNews() {
                 let raw = notice.imageUrl || "";
                 let finalNoticeImg = "";
 
-                // 🍊 [핵심] 이미 완성된 썸네일 링크면 그대로 쓰고, 아니면 ID 추출
+                // 🍊 원장님이 주신 썸네일 링크가 이미 완성형이면 그대로 사용
                 if (raw.includes('thumbnail?id=')) {
-                    finalNoticeImg = raw; 
+                    finalNoticeImg = raw;
                 } else if (raw.includes('id=')) {
                     finalNoticeImg = `https://drive.google.com/thumbnail?id=${raw.split('id=')[1].split('&')[0]}&sz=w800`;
                 } else if (raw.includes('/d/')) {
@@ -640,13 +640,15 @@ async function loadFarmNews() {
                     let raw = story.imageUrl || "";
                     let finalImg = "https://via.placeholder.com/150?text=Hamchorom";
                     
-                    // 🍊 [핵심] 원장님이 주신 썸네일 링크를 1순위로 처리
-                    if (raw.includes('thumbnail?id=')) {
+                    // 🍊 [수정 핵심] 이미 thumbnail 주소면 자르지 말고 '통째로' 사용
+                    if (raw.toLowerCase().includes('thumbnail?id=')) {
                         finalImg = raw;
                     } else if (raw.includes('id=')) {
-                        finalImg = `https://drive.google.com/thumbnail?id=${raw.split('id=')[1].split('&')[0]}&sz=w500`;
+                        let fId = raw.split('id=')[1].split('&')[0];
+                        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w500`;
                     } else if (raw.includes('/d/')) {
-                        finalImg = `https://drive.google.com/thumbnail?id=${raw.split('/d/')[1].split('/')[0]}&sz=w500`;
+                        let fId = raw.split('/d/')[1].split('/')[0];
+                        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w500`;
                     } else if (raw.length > 10) {
                         finalImg = raw;
                     }
@@ -654,13 +656,16 @@ async function loadFarmNews() {
                     const item = document.createElement('div');
                     item.className = 'story-item';
                     item.innerHTML = `
-                        <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=Error'">
+                        <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=ImageError'">
                         <span>${story.title || "농장소식"}</span>
                     `;
                     
                     item.onclick = function() {
-                        // 팝업 시에는 더 큰 사이즈로 변환 시도 (이미 썸네일 링크면 sz값만 교체)
-                        let popupImg = finalImg.replace('sz=w500', 'sz=w800').replace('sz=w1000', 'sz=w800');
+                        // 팝업 시에는 sz 파라미터가 있다면 큰 사이즈로만 교체
+                        let popupImg = finalImg;
+                        if(popupImg.includes('sz=')) {
+                            popupImg = popupImg.replace(/sz=w\d+/, 'sz=w800');
+                        }
                         openStoryModal({
                             title: story.title,
                             content: story.content,
@@ -674,21 +679,21 @@ async function loadFarmNews() {
     } catch (e) { console.error("소식 로딩 실패:", e); }
 }
 
-// 2. 상세보기 팝업 엔진 (여백 자동 확보 로직 추가)
+// 2. 상세보기 팝업 엔진 (상단 여백 40px 보존)
 function openStoryModal(data) {
     const modal = document.getElementById('story-modal');
     if (modal) {
         const modalImg = document.getElementById('modal-img');
         const modalTitle = document.getElementById('modal-title');
         
-        // 🍊 사진이 없을 때 X 버튼과 겹치지 않게 제목 상단 여백 확보
         if (data.imageUrl && data.imageUrl.length > 20) {
             modalImg.src = data.imageUrl;
             modalImg.style.display = 'block';
+            modalImg.style.marginBottom = "15px";
             modalTitle.style.marginTop = "10px"; 
         } else {
             modalImg.style.display = 'none';
-            modalTitle.style.marginTop = "40px"; // 여백 강제 부여
+            modalTitle.style.marginTop = "40px"; // X 버튼 겹침 방지
         }
 
         document.getElementById('modal-title').innerText = data.title || "";
@@ -697,7 +702,7 @@ function openStoryModal(data) {
     }
 }
 
-// 3. 팝업 닫기 (원장님 원본 보존)
+// 3. 팝업 닫기
 document.addEventListener('click', function(e) {
     const modal = document.getElementById('story-modal');
     if (e.target.classList.contains('close-modal') || e.target === modal) {
@@ -705,5 +710,5 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// 🚀 시동 열쇠 (보존)
+// 🚀 시동 열쇠
 window.addEventListener('load', loadFarmNews);
