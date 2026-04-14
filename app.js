@@ -235,7 +235,7 @@ async function submitFinalOrder() {
     receiverPhone: document.getElementById('receiverPhone').value,
     receiverAddress: document.getElementById('receiverAddress').value,
     depositorName: document.getElementById('depositorName').value || document.getElementById('senderName').value,
-    senderName: document.getElementById('senderName').value,
+    senderName: deliveryType === 'gift' ? document.getElementById('senderName').value : '',
     senderPhone: document.getElementById('senderPhone').value,
     itemDetails: itemDetailsStr,
     nickname: document.getElementById('nickname').value || '',
