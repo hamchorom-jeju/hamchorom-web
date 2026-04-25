@@ -537,7 +537,21 @@ function openEditModal(index) {
   editingOrderIndex = index;
   editCart = {};
 
-  document.getElementById('editReceiver').value = order.receiver || '';
+  const editReceiverInput = document.getElementById('editReceiver');
+  editReceiverInput.value = order.receiver || '';
+  editReceiverInput.dataset.originalReceiver = order.receiver || ''; // 원래 이름 저장
+  
+  document.getElementById('editSenderName').value = order.sender || '';
+  
+  // 보내는 분 입력칸 보이기/숨기기 초기 설정
+  const senderGroup = document.getElementById('senderNameGroup');
+  if (order.sender && order.sender.trim() !== "") {
+    // 이미 선물(보내는 분이 있는 주문)이었다면 무조건 보이게 함
+    senderGroup.style.display = 'block';
+  } else {
+    // 본인에게 보내는 주문이었다면 일단 숨김
+    senderGroup.style.display = 'none';
+  }
   document.getElementById('editReceiverPhone').value = order.receiverPhone || '';
   
   // 기존 통주소를 두 칸으로 대략 분리 시도 (하지만 완벽 분리는 어려우므로 기본 칸에 다 넣고 상세는 비움)
@@ -560,6 +574,27 @@ function closeEditModal() {
   document.getElementById('editModal').style.display = 'none';
   editingOrderIndex = -1;
   editCart = {};
+}
+
+function checkReceiverChange() {
+  if (editingOrderIndex === -1) return;
+  const order = renderedOrders[editingOrderIndex];
+  const currentReceiver = document.getElementById('editReceiver').value.trim();
+  const originalReceiver = document.getElementById('editReceiver').dataset.originalReceiver || '';
+  const senderGroup = document.getElementById('senderNameGroup');
+  
+  // 이미 보내는 분이 지정되어 있던 주문(선물)이면 계속 표시
+  if (order.sender && order.sender.trim() !== "") {
+    senderGroup.style.display = 'block';
+    return;
+  }
+  
+  // 자가소비용 주문이었는데, 이름이 바뀌었다면 (선물로 바뀌는 경우) 표시
+  if (currentReceiver !== originalReceiver && currentReceiver !== "") {
+    senderGroup.style.display = 'block';
+  } else {
+    senderGroup.style.display = 'none';
+  }
 }
 
 function parseItemsString(itemsStr) {
@@ -665,6 +700,7 @@ async function submitOrderEdit() {
     receiverName: receiver,
     receiverPhone: receiverPhone,
     receiverAddress: `${addressBase} ${addressDetail}`,
+    senderName: document.getElementById('editSenderName').value.trim(),
     deliveryMsg: document.getElementById('editDeliveryMsg').value || '',
     giftMessage: document.getElementById('editGiftMsg').value || '',
     itemDetails: itemDetailsStr,
