@@ -99,6 +99,13 @@ function renderProducts(category, element) {
     const isSoldOut = p.status === "품절" || stock <= 0;
     const currentQty = cart[name] ? cart[name].quantity : 0;
 
+    let stockText = "";
+    if (isSoldOut) {
+      stockText = " | 품절";
+    } else if (stock < 50) {
+      stockText = ` | <span style="color:#D84315; font-weight:bold;">재고: ${stock}박스 (마감임박!)</span>`;
+    }
+
     const card = document.createElement('div');
     card.className = `p-card ${isSoldOut ? 'sold-out' : ''}`;
     card.style.opacity = isSoldOut ? "0.6" : "1";
@@ -107,7 +114,7 @@ function renderProducts(category, element) {
       <img src="${imgUrl}" class="p-img" alt="${name}" style="${isSoldOut ? 'filter: grayscale(100%);' : ''}">
       <div class="p-info">
         <div class="p-title">${name} ${isSoldOut ? '<span style="color:red; font-size:0.8rem;">[품절]</span>' : ''}</div>
-        <div class="p-meta">${weight} | ${count} | 재고:${isSoldOut ? '0' : stock}박스</div>
+        <div class="p-meta">${weight} ${count ? '| ' + count : ''} ${stockText}</div>
         <div class="p-price">${price.toLocaleString()}원</div>
         
         <div class="p-action">
