@@ -69,9 +69,20 @@ function renderProducts(category, element) {
 
   const filtered = category === "All" ? allProducts : allProducts.filter(p => (p['품종'] || p['카테고리'] || p.category || p.variety || '기타') === category);
 
+  // 🍊 [추가 로직] 재고 기반 정렬 (판매중 상단 / 품절 하단)
+  filtered.sort((a, b) => {
+    const stockA = parseInt(a.stock) || 0;
+    const stockB = parseInt(b.stock) || 0;
+    const isASoldOut = a.status === '품절' || stockA <= 0;
+    const isBSoldOut = b.status === '품절' || stockB <= 0;
+    
+    if (isASoldOut && !isBSoldOut) return 1;
+    if (!isASoldOut && isBSoldOut) return -1;
+    return 0; // 동일 상태면 원장님의 시트 순서 그대로 보존
+  });
+
   filtered.forEach(p => {
     const name = p['상품명'] || p.name;
-    // 구글 시트에 "35,000원" 처럼 문자열이 올 수 있으므로 콤마/문자 제거 후 숫자로 치환
     const priceRaw = String(p['판매가'] || p['가격'] || p.price || "0").replace(/[^0-9]/g, '');
     const price = parseInt(priceRaw) || 0;
     const weight = p['중량'] || p.weight || '';
@@ -79,29 +90,32 @@ function renderProducts(category, element) {
     const imgFromSheet = p['사진링크'] || p['사진'] || p.image;
     let imgUrl = imgFromSheet || "https://images.unsplash.com/photo-1557800636-894a64c1696f?auto=format&fit=crop&w=300&q=80";
     
-    // 만약 한라봉 상품인데 시트에 사진이 없거나 기본 이미지라면, 원장님이 주신 새 사진으로 대체
     if (name.includes("한라봉") && (!imgFromSheet || imgFromSheet.includes("unsplash"))) {
       imgUrl = "https://lh3.googleusercontent.com/d/1pOnBm27Zkhgq6H9DQr4EeiW-MCPHkXHx";
     }
     
-    // 현재 수량
+    // 재고 및 상태 파악
+    const stock = parseInt(p.stock) || 0;
+    const isSoldOut = p.status === "품절" || stock <= 0;
     const currentQty = cart[name] ? cart[name].quantity : 0;
 
     const card = document.createElement('div');
-    card.className = "p-card";
+    card.className = `p-card ${isSoldOut ? 'sold-out' : ''}`;
+    card.style.opacity = isSoldOut ? "0.6" : "1";
+    
     card.innerHTML = `
-      <img src="${imgUrl}" class="p-img" alt="${name}">
+      <img src="${imgUrl}" class="p-img" alt="${name}" style="${isSoldOut ? 'filter: grayscale(100%);' : ''}">
       <div class="p-info">
-        <div class="p-title">${name}</div>
-        <div class="p-meta">${weight} | ${count}</div>
+        <div class="p-title">${name} ${isSoldOut ? '<span style="color:red; font-size:0.8rem;">[품절]</span>' : ''}</div>
+        <div class="p-meta">${weight} | ${count} | 재고:${isSoldOut ? '0' : stock}박스</div>
         <div class="p-price">${price.toLocaleString()}원</div>
         
         <div class="p-action">
-          <span>수량선택</span>
-          <div class="qty-control">
-            <button class="qty-btn" onclick="updateQty('${name}', -1, ${price})">-</button>
+          <span>${isSoldOut ? '품절되었습니다' : '수량선택'}</span>
+          <div class="qty-control" style="${isSoldOut ? 'pointer-events:none; opacity:0.5;' : ''}">
+            <button class="qty-btn" onclick="updateQty('${name}', -1, ${price}, ${stock})">-</button>
             <div class="qty-val" id="qty-${name}">${currentQty}</div>
-            <button class="qty-btn" onclick="updateQty('${name}', 1, ${price})">+</button>
+            <button class="qty-btn" onclick="updateQty('${name}', 1, ${price}, ${stock})">+</button>
           </div>
         </div>
       </div>
@@ -111,10 +125,17 @@ function renderProducts(category, element) {
 }
 
 // --- CART LOGIC ---
-function updateQty(name, change, price) {
+function updateQty(name, change, price, stock) {
   if(!cart[name]) cart[name] = { quantity: 0, price: price };
   
-  cart[name].quantity += change;
+  const newQty = cart[name].quantity + change;
+  
+  if (newQty > stock) {
+    alert(`죄송합니다. 현재 재고가 ${stock}박스뿐입니다.`);
+    return;
+  }
+  
+  cart[name].quantity = newQty;
   if(cart[name].quantity < 0) cart[name].quantity = 0;
   
   // UI Update
@@ -199,8 +220,7 @@ function selectDelivery(type) {
   document.getElementById('receiverForm').style.display = 'block';
   document.getElementById('nextBtn2').disabled = false;
   const giftMsgContainer = document.getElementById('giftMsgContainer');
-
-  if(type === 'self') {
+  if (type === 'self') {
     document.getElementById('receiverName').value = document.getElementById('senderName').value;
     document.getElementById('receiverPhone').value = document.getElementById('senderPhone').value;
     document.getElementById('receiverAddress').value = "";
@@ -212,18 +232,28 @@ function selectDelivery(type) {
     document.getElementById('receiverAddress').value = "";
     giftMsgContainer.style.display = 'block';
   }
+
+  // 🍊 [추가] 수령 방식 선택 시 주소록 실시간 조회 (전화번호 기준)
+  const sPhone = document.getElementById('senderPhone').value;
+  if (sPhone) checkAddressHistory(sPhone, type);
 }
 
 // --- SUBMIT ORDER (POST 15 Columns) ---
 async function submitFinalOrder() {
   const submitBtn = document.getElementById('submitOrderBtn');
-  submitBtn.innerText = "처리중..."; submitBtn.disabled = true;
+  const originalText = submitBtn.innerText;
+  submitBtn.innerText = "재고 확인 중..."; submitBtn.disabled = true;
 
-  // orderPath ?from= 파악
   const urlParams = new URLSearchParams(window.location.search);
   const orderPathVal = urlParams.get('from') || '웹앱_직접';
 
-  let itemDetailsStr = Object.keys(cart).map(k => `${k} x ${cart[k].quantity}`).join(", ");
+  const itemsArray = Object.keys(cart).map(k => ({
+    name: k,
+    quantity: cart[k].quantity,
+    price: cart[k].price
+  }));
+
+  let itemDetailsStr = itemsArray.map(item => `${item.name} x ${item.quantity}`).join(", ");
   
   let totalAmount = 0;
   for(let k in cart) totalAmount += cart[k].price * cart[k].quantity;
@@ -238,6 +268,7 @@ async function submitFinalOrder() {
     senderName: deliveryType === 'gift' ? document.getElementById('senderName').value : '',
     senderPhone: document.getElementById('senderPhone').value,
     itemDetails: itemDetailsStr,
+    items: itemsArray,
     nickname: document.getElementById('nickname').value || '',
     deliveryMsg: document.getElementById('deliveryMsg').value || '',
     orderPath: orderPathVal,
@@ -247,28 +278,49 @@ async function submitFinalOrder() {
   };
 
   try {
-    // 302 리다이렉트 시 GET으로 변환되어 doPost가 안 먹히는 브라우저 고질병 방지를 위해
-    // no-cors를 제거하고 단순 POST 요청으로 쏘도록 수정 (CORS 에러 로그가 브라우저에 찍힐 수 있으나 서버 전송은 100% 보장됨)
-    fetch(API_URL, {
+    const response = await fetch(API_URL, {
       method: 'POST',
       body: JSON.stringify(payload),
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      }
-    }).then(res => {
-        console.log("=== 구글 API 전송 플로우 통과 ===");
-        closeCheckout();
-        document.getElementById('successModal').style.display = 'flex';
-    }).catch(err => {
-        // CORS 정책에 의해 브라우저가 차단하더라도 서버의 doPost는 이미 정상 작동함.
-        console.log("CORS 경고 발생 (정상): 데이터는 구글 시트에 삽입되었습니다.");
-        closeCheckout();
-        document.getElementById('successModal').style.display = 'flex';
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
     });
     
+    // 302 리다이렉트 등으로 인해 response.json()이 실패할 수 있는 구글 스크립트 특성상
+    // 텍스트로 받아 확인 프로세스를 거침
+    const text = await response.text();
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch(e) {
+      // JSON 파싱 실패 시 (구글의 HTML 안내 페이지 등이 오면) 성공으로 간주하던 관행 유지 혹은 확인 로직
+      console.log("Response text check:", text);
+      if (text.includes("Success") || text.includes("완료")) {
+         result = { success: true };
+      } else {
+         throw new Error("서버 응답 파싱 실패");
+      }
+    }
+
+    if (result.success) {
+        closeCheckout();
+        document.getElementById('successModal').style.display = 'flex';
+    } else {
+        alert("⚠️ 주문 실패: " + (result.message || "알 수 없는 오류"));
+        submitBtn.innerText = originalText;
+        submitBtn.disabled = false;
+    }
+    
   } catch(err) {
-    alert("오류 발생: " + err.message);
-    submitBtn.innerText = "최종 결제 및 주문완료";
+    console.error("Submit error:", err);
+    // 구글 스크립트 특유의 CORS/Redirect 상황에서도 데이터는 들어갔을 확률이 높으므로
+    // 명백한 재고 부족 메시지가 아니라면 성공 처리를 유도하거나 재시도를 안내
+    if (err.message.includes("재고")) {
+      alert(err.message);
+    } else {
+      // 원장님 버전: 일단 성공 모달 띄우기 (데이터 유실 방지 우선)
+      closeCheckout();
+      document.getElementById('successModal').style.display = 'flex';
+    }
+    submitBtn.innerText = originalText;
     submitBtn.disabled = false;
   }
 }
@@ -293,17 +345,14 @@ async function fetchOrderStatus() {
       // 1단계: 배열 정렬 (다단계 우선순위 가중치 랭킹 시스템)
       result.data.sort((a, b) => {
         const getPriorityScore = (statusStr) => {
-            const s = statusStr || "";
-            // 1순위 (최상단): 결제가 필요한 건
-            if (s.includes("주문접수") || s.includes("입금대기")) return 1;
-            // 2순위: 방금 결제가 확인된 건
-            if (s.includes("입금확인")) return 2;
-            // 3순위: 포장 중인 건
-            if (s.includes("상품준비중") || s.includes("발송준비")) return 3;
-            // 4순위: 이미 떠난 건 (가장 하단)
-            if (s.includes("발송시작") || s.includes("배송중") || s.includes("배송완료")) return 4;
-            // 그 외 알 수 없는 상태
-            return 5;
+            const s = (statusStr || "").replace(/\s+/g, '');
+            if (s.includes("주문접수")) return 1;
+            if (s.includes("입금대기")) return 2;
+            if (s.includes("입금확인")) return 3;
+            if (s.includes("상품준비")) return 4;
+            if (s.includes("발송준비")) return 5;
+            if (s.includes("발송시작") || s.includes("배송중") || s.includes("배송완료") || s.includes("발송완료")) return 6;
+            return 7;
         };
         
         // 우선순위 숫자가 작을수록(1점) 배열의 앞쪽(화면 상단)으로 오도록 오름차순 정렬
@@ -315,11 +364,47 @@ async function fetchOrderStatus() {
       let cardsHtml = "";
       renderedOrders = [];
 
+      const statusConfig = {
+        "주문접수": {
+          img: "https://lh3.googleusercontent.com/d/1fOqS9BPCzT7z-z5S_KLG28W8uDg8rbTU",
+          showEdit: true
+        },
+        "입금대기": {
+          img: "https://lh3.googleusercontent.com/d/1RCfl3twsjnbrCzMJjHjsUBKJKYXumPYx",
+          showEdit: false
+        },
+        "입금확인": {
+          img: "https://lh3.googleusercontent.com/d/1H_ou-5kFjcKVZqci1KvdUJYHR3BHy_K-",
+          showEdit: false
+        },
+        "상품준비중": {
+          img: "https://lh3.googleusercontent.com/d/1-ageN34CBr71tJKD-548CsYImDXRcwDf",
+          showEdit: false
+        },
+        "발송시작": {
+          img: "https://lh3.googleusercontent.com/d/1ZYY93vYMH27HiAoEWkXxfaLDmE28mxqn",
+          showEdit: false
+        }
+      };
+
       result.data.forEach(order => {
         renderedOrders.push(order);
         const orderIdx = renderedOrders.length - 1;
         const currentStatus = order.status || "";
-        const isPending = currentStatus.includes("주문접수") || currentStatus.includes("입금대기");
+        const normStatus = currentStatus.replace(/\s+/g, '');
+        const isPending = normStatus.includes("주문접수") || normStatus.includes("입금대기");
+
+        let config = statusConfig["주문접수"];
+        if (normStatus.includes("입금대기")) config = statusConfig["입금대기"];
+        else if (normStatus.includes("입금확인")) config = statusConfig["입금확인"];
+        else if (normStatus.includes("상품준비") || normStatus.includes("발송준비")) config = statusConfig["상품준비중"];
+        else if (normStatus.includes("발송시작") || normStatus.includes("배송중") || normStatus.includes("배송완료") || normStatus.includes("발송완료")) config = statusConfig["발송시작"];
+        else if (normStatus.includes("주문접수")) config = statusConfig["주문접수"];
+
+        let badgeStatusMsg = currentStatus;
+        if (normStatus.includes("주문접수")) {
+            badgeStatusMsg = "주문서 확인중! 현단계에서만 변경사항 수정이 가능합니다.";
+        }
 
         let trackingHtml = "";
         let amountHtml = "";
@@ -330,28 +415,26 @@ async function fetchOrderStatus() {
             let justAmount = order.totalAmount ? `${orderAmt.toLocaleString()}원` : "확인 중";
             amountHtml = `
             <div style="font-weight:bold; font-size:1.15rem; color:#F57C00; margin-bottom: 5px;">입금하실 결제 금액: ${justAmount}</div>
-            <div style="font-size:0.95rem; font-weight:bold; color:#388E3C; margin-bottom: 10px;">계좌: 농협 060-02-077998 문미진</div>
             `;
         } else {
-            trackingHtml = order.tracking ? `
-            <div style="font-size:1.1rem; font-weight:bold; color:#1976D2; border: 2px dashed #1976D2; padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: left; background:#E3F2FD;">
-                🚚 송장번호: <span style="font-size:1.4rem;">${order.tracking}</span>
-            </div>` : `
-            <div style="font-size:1.05rem; font-weight:bold; color:#1976D2; margin-bottom: 15px; padding: 10px; background: #E3F2FD; border-radius: 6px; display:inline-block;">
-                조금만 기다려주세요! 상품을 정성껏 준비 중입니다. 🍊
-            </div>
-            `;
-            let orderAmt = order.totalAmount ? order.totalAmount : "결제완료";
+            const isShipped = normStatus.includes("발송시작") || normStatus.includes("배송중") || normStatus.includes("배송완료") || normStatus.includes("발송완료");
+            if (isShipped && order.tracking) {
+                trackingHtml = `
+                <div style="font-size:1.1rem; font-weight:bold; color:#1976D2; border: 2px dashed #1976D2; padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: left; background:#E3F2FD;">
+                    🚚 송장번호: <span style="font-size:1.4rem;">${order.tracking}</span>
+                </div>`;
+            }
+
+            let orderAmt = order.totalAmount ? order.totalAmount : "확인완료";
             amountHtml = `
-            <div style="font-size:0.85rem; color:#888; text-decoration: line-through; margin-bottom: 10px;">결제된 금액: ${orderAmt}</div>
+            <div style="font-size:0.95rem; font-weight:bold; color:#2E7D32; margin-bottom: 10px;">✅ 결제 완료된 금액: ${orderAmt}</div>
             `;
         }
 
         const cardColor = isPending ? '#F57C00' : '#ccc';
         const badgeBg = isPending ? '#FFF3E0' : '#E3F2FD';
 
-        // 수정 버튼 (백엔드에서 editable: true를 보내준 경우에만 노출)
-        const editBtnHtml = order.editable ? `
+        const editBtnHtml = config.showEdit && order.editable ? `
           <div style="margin-top:12px; text-align:center;">
             <button onclick="openEditModal(${orderIdx})" style="background:#F57C00; color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.95rem; width:100%;">
               ✏️ 주문 수정하기
@@ -359,15 +442,25 @@ async function fetchOrderStatus() {
           </div>
         ` : "";
 
+        let miniatureHtml = `
+        <div class="miniature-status-zone" style="justify-content: center; padding: 25px 15px;">
+            <div class="miniature-img-box" style="flex: 0 0 220px; max-width: 100%;">
+                <img src="${config.img}" alt="상태" class="floating-img" style="box-shadow: 0 10px 20px rgba(0,0,0,0.08);" />
+            </div>
+        </div>
+        `;
+
         cardsHtml += `
           <div class="lookup-card" data-order-id="${order.orderId || ''}" style="text-align:left; border: 2px solid ${cardColor}; padding:15px; margin-bottom:15px; border-radius:12px;">
             <div style="font-size:0.85rem; color:#888; margin-bottom:5px; font-weight:bold;">주문번호: ${order.orderId || '번호 미발급'}</div>
-            <div style="border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+            <div style="border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:15px; display:flex; flex-direction:column; gap:10px;">
                 <h3 style="margin:0; font-size:1.15rem; color:#333;">📦 배송지: ${order.receiver || '확인중'} 님</h3>
-                <span class="badge" style="font-size:0.9rem; padding:4px 8px; background:${badgeBg}; border-radius:20px; font-weight:bold; color:#333;">
-                    ${currentStatus || '상태 확인중'}
+                <span class="badge" style="font-size:0.95rem; padding:8px 12px; background:${badgeBg}; border-radius:8px; font-weight:bold; color:#333; word-break:keep-all; line-height:1.4;">
+                    ${badgeStatusMsg || '상태 확인중'}
                 </span>
             </div>
+
+            ${miniatureHtml}
 
             ${trackingHtml}
             ${amountHtml}
@@ -385,35 +478,39 @@ async function fetchOrderStatus() {
         `;
       });
 
-      // 3단계: 합계 요약 바 (항상 최상단에 노출되도록 개선)
-      const customerName = result.data[0].sender || result.data[0].receiver || "고객";
+      // 3단계: 상단 요약 바 원상복구 및 적용
+      const dominantOrder = result.data[0];
+      const customerName = dominantOrder.customerName || dominantOrder.sender || dominantOrder.receiver || "고객";
+      const displayTitle = `${customerName}님, 실시간 주문현황입니다.`;
 
       let summaryHtml = `
-      <div style="background:#FFF3E0; border: 2px solid #F57C00; border-radius:12px; padding: 20px; margin-bottom: 25px; text-align:center;">
-          <h2 style="margin:0 0 10px 0; color:#F57C00; font-size:1.25rem;">${customerName}님, 실시간 주문 현황입니다.</h2>
-          ${globalPendingTotal > 0 ? `
-            <div style="font-size:1.4rem; font-weight:bold; color:#333; margin-top: 15px; margin-bottom: 5px;">입금 확인이 필요한 금액: <span style="color:#D84315;">${globalPendingTotal.toLocaleString()}원</span></div>
-            <div style="font-size:0.95rem; font-weight:bold; color:#388E3C; margin-top: 10px; background:#fff; padding:10px; border-radius:8px; display:inline-block; border: 1px solid #c8e6c9;">
-                농협 060-02-077998 문미진
-                <button onclick="navigator.clipboard.writeText('060-02-077998'); alert('계좌번호가 복사되었습니다!');" style="margin-left:10px; background:#388E3C; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-size:0.85rem; cursor:pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">복사하기</button>
-            </div>
-          ` : `
-            <div style="font-size:1.15rem; font-weight:bold; color:#1976D2; margin-top: 15px;">🎉 모든 주문의 결제 및 처리가 완료되었습니다!</div>
-          `}
-      </div>
+      <div class="status-title-large uppercase" style="margin-bottom:15px;">${displayTitle}</div>
       `;
 
-      // 최종 DOM 부착
+      if (globalPendingTotal > 0) {
+          summaryHtml += `
+          <div style="background:white; border:2px solid #F57C00; border-radius:12px; padding:15px; margin-bottom:20px; box-shadow:0 4px 10px rgba(0,0,0,0.05);">
+              <div style="font-size:1.1rem; color:#444; margin-bottom:5px;">입금 확인이 필요한 금액: <strong style="color:#D84315; font-size:1.3rem;">${globalPendingTotal.toLocaleString()}원</strong></div>
+              <div style="font-size:0.95rem; color:#388E3C; font-weight:bold; margin-top:10px; background:#f9f9f9; padding:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+                  <span>농협 060-02-077998 문미진</span>
+                  <button onclick="navigator.clipboard.writeText('060-02-077998'); alert('계좌번호가 복사되었습니다!');" style="background:#fff; border:1px solid #1976D2; color:#1976D2; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.85rem;">계좌복사</button>
+              </div>
+          </div>
+          `;
+      }
+
       resultsDiv.innerHTML = summaryHtml + cardsHtml;
     } else {
       resultsDiv.innerHTML = "<p style='color:red;'>일치하는 주문 내역이 없습니다.</p>";
     }
-  } catch(err) {
+  } catch (err) {
+    console.error(err);
     resultsDiv.innerHTML = `<p style='color:red;'>잠시후 다시 시도해주세요. (테스트 환경에서는 조회가 제한될 수 있습니다)</p>`;
   } finally {
     loader.style.display = 'none';
   }
 }
+
 
 // --- ORDER EDIT LOGIC ---
 function openEditModal(index) {
@@ -729,3 +826,107 @@ document.addEventListener('click', function(e) {
 
 // 🚀 시동 열쇠
 window.addEventListener('load', loadFarmNews);
+
+// --- [추가] 주소록 자동완성 로직 (UX 개선 버전) ---
+async function checkAddressHistory(phone, type) {
+    let container = document.getElementById('addressHistoryBox');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'addressHistoryBox';
+        // 위치 재배치: 방식 선택 버튼(.type-selectors) 바로 아래에 삽입
+        const typeSelectors = document.querySelector('.type-selectors');
+        if (typeSelectors) {
+            typeSelectors.parentNode.insertBefore(container, typeSelectors.nextSibling);
+        }
+    }
+
+    // 1. 로딩 즉시 시각화
+    container.innerHTML = `
+        <div style="font-size:0.85rem; color:#F57C00; padding:15px; text-align:center; background:#fffaf5; border-radius:10px; margin: 10px 0; border: 1px dashed #ffccbc;">
+            최근 배송지 내역을 불러오는 중입니다... 🍊
+        </div>`;
+
+    try {
+        const res = await fetch(`${API_URL}?action=getAddressHistory&phone=${encodeURIComponent(phone)}&deliveryType=${type}`);
+        const result = await res.json();
+        renderAddressSelection(result.data || []);
+    } catch(e) { 
+        console.error("주소록 조회 실패", e);
+        container.innerHTML = ""; 
+    }
+}
+
+function renderAddressSelection(list) {
+    const container = document.getElementById('addressHistoryBox');
+    if (!container) return;
+
+    // 2. 데이터 부재 시 처리
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div id="noHistoryMsg" style="font-size:0.85rem; color:#777; padding:15px; text-align:center; background:#f9f9f9; border-radius:10px; margin: 10px 0; border: 1px solid #eee;">
+                📍 이전 배송 기록이 없습니다.
+            </div>`;
+        
+        setTimeout(() => {
+            const msg = document.getElementById('noHistoryMsg');
+            if (msg) {
+                msg.style.transition = "opacity 0.5s";
+                msg.style.opacity = "0";
+                setTimeout(() => { if (msg) msg.style.display = 'none'; }, 500);
+            }
+        }, 4000);
+
+        ['receiverName', 'receiverPhone', 'receiverAddress'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', () => {
+                const msg = document.getElementById('noHistoryMsg');
+                if (msg) msg.style.display = 'none';
+            }, { once: true });
+        });
+        return;
+    }
+
+    // 3. 데이터 존재 시 처리 (세로형 리스트 레이아웃)
+    let html = `
+        <div style="margin: 15px 0;">
+            <p style="font-size:0.8rem; color:#666; margin-bottom:5px; padding-left:5px; font-weight:bold;">
+                최근 배송지(${list.length}건) 내역입니다.
+            </p>
+            <p style="font-size:0.75rem; color:#F57C00; margin-bottom:10px; padding-left:5px;">
+                💡 클릭 시 해당 주소가 자동으로 입력됩니다.
+            </p>
+            <div style="background:#f8fbff; border:1px solid #d0e3ff; border-radius:12px; padding:10px; max-height:280px; overflow-y:auto; box-shadow:inset 0 2px 4px rgba(0,0,0,0.03);">
+                <div style="display:flex; flex-direction:column; gap:8px;">`;
+    
+    list.forEach(addr => {
+        html += `
+            <div onclick="applyRecentAddress('${addr.name}','${addr.phone}','${addr.address}')" 
+                 style="background:white; border:1px solid #e0eafb; padding:12px; border-radius:10px; cursor:pointer; transition: all 0.2s; border-left: 4px solid #1976d2;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <strong style="color:#1976d2; font-size:0.9rem;">${addr.name}</strong>
+                    <span style="color:#888; font-size:0.7rem;">${addr.phone || ''}</span>
+                </div>
+                <div style="color:#444; font-size:0.8rem; line-height:1.4; word-break:keep-all;">
+                    ${addr.address}
+                </div>
+            </div>`;
+    });
+    
+    html += `</div></div></div>`;
+    container.innerHTML = html;
+}
+
+function applyRecentAddress(name, phone, addr) {
+    if (deliveryType === 'self') {
+        document.getElementById('receiverAddress').value = addr;
+    } else {
+        document.getElementById('receiverName').value = name;
+        document.getElementById('receiverPhone').value = phone;
+        document.getElementById('receiverAddress').value = addr;
+    }
+    // 주소 입력 시 '기록 없음' 메시지 방지 위해 container 비움
+    const container = document.getElementById('addressHistoryBox');
+    if (container) container.innerHTML = "";
+    
+    alert(`배송지 정보가 자동 입력되었습니다.`);
+}
