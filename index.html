@@ -213,7 +213,11 @@
 
       <div class="form-group">
         <label>받는 분 성함 *</label>
-        <input type="text" id="editReceiver">
+        <input type="text" id="editReceiver" oninput="checkReceiverChange()">
+      </div>
+      <div class="form-group" id="senderNameGroup" style="display:none;">
+        <label>보내는 분 성함 (변경 시 입력)</label>
+        <input type="text" id="editSenderName" placeholder="본인이 아닐 경우 입력">
       </div>
       <div class="form-group">
         <label>받는 분 연락처 *</label>
