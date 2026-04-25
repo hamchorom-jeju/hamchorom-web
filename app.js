@@ -600,12 +600,12 @@ function renderEditProducts(existingItems) {
       }
     }
 
-    // 현재 재고 및 상태 확인
+    // 현재 재고 및 상태 확인 (이제 상품 추가/수정이 불가하므로 품절 여부는 참고용)
     const stock = parseInt(p.stock) || 0;
     const isSoldOut = p.status === "품절" || stock <= 0;
 
-    // 이미 주문한 상품이 아니고, 품절 상태라면 아예 화면에 그리지 않고 건너뜁니다.
-    if (qty === 0 && isSoldOut) return;
+    // 수량 변경이 불가능하므로, 오직 기존에 주문했던(qty > 0) 상품만 보여줍니다.
+    if (qty === 0) return;
 
     if (qty > 0) {
       editCart[name] = { quantity: qty, price: price };
@@ -616,28 +616,14 @@ function renderEditProducts(existingItems) {
     div.innerHTML = `
       <div style="flex:1;">
         <div style="font-weight:bold; font-size:0.95rem;">${name}</div>
-        <div style="color:#F57C00; font-size:0.85rem;">${price.toLocaleString()}원</div>
+        <div style="color:#888; font-size:0.85rem;">단가: ${price.toLocaleString()}원</div>
       </div>
       <div style="display:flex; align-items:center; gap:6px;">
-        <button onclick="updateEditQty('${safeName}', -1, ${price})" style="width:30px; height:30px; border:1px solid #ddd; background:#f9f9f9; border-radius:6px; font-size:1rem; cursor:pointer;">-</button>
-        <span id="editQty-${name}" style="font-weight:bold; min-width:25px; text-align:center;">${qty}</span>
-        <button onclick="updateEditQty('${safeName}', 1, ${price})" style="width:30px; height:30px; border:1px solid #ddd; background:#f9f9f9; border-radius:6px; font-size:1rem; cursor:pointer;">+</button>
+        <span style="font-weight:bold; color:#1976D2; font-size:1.1rem; padding-right:10px;">${qty}박스</span>
       </div>
     `;
     container.appendChild(div);
   });
-}
-
-function updateEditQty(name, change, price) {
-  if (!editCart[name]) editCart[name] = { quantity: 0, price: price };
-  editCart[name].quantity += change;
-  if (editCart[name].quantity < 0) editCart[name].quantity = 0;
-
-  const el = document.getElementById(`editQty-${name}`);
-  if (el) el.textContent = editCart[name] ? editCart[name].quantity : 0;
-
-  if (editCart[name].quantity === 0) delete editCart[name];
-  updateEditTotal();
 }
 
 function updateEditTotal() {
