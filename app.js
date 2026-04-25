@@ -443,9 +443,9 @@ async function fetchOrderStatus() {
         ` : "";
 
         let miniatureHtml = `
-        <div class="miniature-status-zone" style="justify-content: center; padding: 20px 10px;">
-            <div class="miniature-img-box" style="flex: 0 0 150px; max-width: 50%;">
-                <img src="${config.img}" alt="상태" class="floating-img" style="box-shadow: 0 8px 16px rgba(0,0,0,0.08);" />
+        <div class="miniature-status-zone" style="justify-content: center; padding: 25px 10px;">
+            <div class="miniature-img-box" style="width: 55%; max-width: 220px; min-width: 150px;">
+                <img src="${config.img}" alt="상태" class="floating-img" style="box-shadow: 0 10px 20px rgba(0,0,0,0.1);" />
             </div>
         </div>
         `;
