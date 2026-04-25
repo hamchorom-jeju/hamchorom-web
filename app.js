@@ -197,10 +197,14 @@ function nextStep(current, next) {
   }
   if(current === 2) {
     if(!deliveryType) return alert("수령 방식을 선택해주세요.");
-    const rName = document.getElementById('receiverName').value;
-    const rPhone = document.getElementById('receiverPhone').value;
-    const rAddr = document.getElementById('receiverAddress').value;
-    if(!rName || !rPhone || !rAddr) return alert("받는 분 정보를 정확히 입력해주세요.");
+    const rName = document.getElementById('receiverName').value.trim();
+    const rPhone = document.getElementById('receiverPhone').value.trim();
+    const rAddr = document.getElementById('receiverAddress').value.trim();
+    const rAddrDetail = document.getElementById('receiverAddressDetail').value.trim();
+    
+    if(!rName || !rPhone || !rAddr || !rAddrDetail) {
+      return alert("받는 분 성함, 연락처, 주소(상세주소 포함)를 모두 정확히 입력해주세요.");
+    }
   }
   goToStep(next);
 }
@@ -231,12 +235,14 @@ function selectDelivery(type) {
     document.getElementById('receiverName').value = document.getElementById('senderName').value;
     document.getElementById('receiverPhone').value = document.getElementById('senderPhone').value;
     document.getElementById('receiverAddress').value = "";
+    document.getElementById('receiverAddressDetail').value = "";
     giftMsgContainer.style.display = 'none';
     document.getElementById('giftMessage').value = "";
   } else {
     document.getElementById('receiverName').value = "";
     document.getElementById('receiverPhone').value = "";
     document.getElementById('receiverAddress').value = "";
+    document.getElementById('receiverAddressDetail').value = "";
     giftMsgContainer.style.display = 'block';
   }
 
@@ -265,12 +271,16 @@ async function submitFinalOrder() {
   let totalAmount = 0;
   for(let k in cart) totalAmount += cart[k].price * cart[k].quantity;
 
+  const baseAddr = document.getElementById('receiverAddress').value.trim();
+  const detailAddr = document.getElementById('receiverAddressDetail').value.trim();
+  const fullAddress = baseAddr ? `${baseAddr} ${detailAddr}` : "";
+
   const payload = {
     timestampId: new Date().toISOString(),
     wishDate: document.getElementById('wishDate').value || '',
     receiverName: document.getElementById('receiverName').value,
     receiverPhone: document.getElementById('receiverPhone').value,
-    receiverAddress: document.getElementById('receiverAddress').value,
+    receiverAddress: fullAddress,
     depositorName: document.getElementById('depositorName').value || document.getElementById('senderName').value,
     senderName: deliveryType === 'gift' ? document.getElementById('senderName').value : '',
     senderPhone: document.getElementById('senderPhone').value,
@@ -529,7 +539,11 @@ function openEditModal(index) {
 
   document.getElementById('editReceiver').value = order.receiver || '';
   document.getElementById('editReceiverPhone').value = order.receiverPhone || '';
+  
+  // 기존 통주소를 두 칸으로 대략 분리 시도 (하지만 완벽 분리는 어려우므로 기본 칸에 다 넣고 상세는 비움)
   document.getElementById('editAddress').value = order.address || '';
+  document.getElementById('editAddressDetail').value = '';
+  
   document.getElementById('editDeliveryMsg').value = order.memo || '';
   document.getElementById('editGiftMsg').value = order.giftMessage || '';
   document.getElementById('editOrderId').textContent = order.orderId || '';
@@ -586,6 +600,13 @@ function renderEditProducts(existingItems) {
       }
     }
 
+    // 현재 재고 및 상태 확인
+    const stock = parseInt(p.stock) || 0;
+    const isSoldOut = p.status === "품절" || stock <= 0;
+
+    // 이미 주문한 상품이 아니고, 품절 상태라면 아예 화면에 그리지 않고 건너뜁니다.
+    if (qty === 0 && isSoldOut) return;
+
     if (qty > 0) {
       editCart[name] = { quantity: qty, price: price };
     }
@@ -633,11 +654,12 @@ async function submitOrderEdit() {
   if (!order) return;
 
   const receiver = document.getElementById('editReceiver').value;
-  const receiverPhone = document.getElementById('editReceiverPhone').value;
-  const address = document.getElementById('editAddress').value;
+  const receiverPhone = document.getElementById('editReceiverPhone').value.trim();
+  const addressBase = document.getElementById('editAddress').value.trim();
+  const addressDetail = document.getElementById('editAddressDetail').value.trim();
 
-  if (!receiver || !receiverPhone || !address) {
-    return alert("받는 분 정보를 모두 입력해주세요.");
+  if (!receiver || !receiverPhone || !addressBase || !addressDetail) {
+    return alert("받는 분 정보 및 상세주소를 모두 입력해주세요.");
   }
   if (Object.keys(editCart).length === 0) {
     return alert("최소 1개 이상의 상품을 선택해주세요.");
@@ -656,7 +678,7 @@ async function submitOrderEdit() {
     orderId: order.orderId,
     receiverName: receiver,
     receiverPhone: receiverPhone,
-    receiverAddress: address,
+    receiverAddress: `${addressBase} ${addressDetail}`,
     deliveryMsg: document.getElementById('editDeliveryMsg').value || '',
     giftMessage: document.getElementById('editGiftMsg').value || '',
     itemDetails: itemDetailsStr,
@@ -926,14 +948,42 @@ function renderAddressSelection(list) {
 function applyRecentAddress(name, phone, addr) {
     if (deliveryType === 'self') {
         document.getElementById('receiverAddress').value = addr;
+        document.getElementById('receiverAddressDetail').value = "";
     } else {
         document.getElementById('receiverName').value = name;
         document.getElementById('receiverPhone').value = phone;
         document.getElementById('receiverAddress').value = addr;
+        document.getElementById('receiverAddressDetail').value = "";
     }
+    document.getElementById('receiverAddressDetail').focus();
     // 주소 입력 시 '기록 없음' 메시지 방지 위해 container 비움
     const container = document.getElementById('addressHistoryBox');
     if (container) container.innerHTML = "";
     
     alert(`배송지 정보가 자동 입력되었습니다.`);
+}
+
+// --- ADDRESS SEARCH (DAUM POSTCODE) ---
+function searchAddress(targetId, detailTargetId) {
+    new daum.Postcode({
+        oncomplete: function(data) {
+            let addr = '';
+            if (data.userSelectedType === 'R') {
+                addr = data.roadAddress;
+            } else { 
+                addr = data.jibunAddress;
+            }
+            
+            const targetElement = document.getElementById(targetId);
+            targetElement.value = `(${data.zonecode}) ${addr}`;
+            
+            if (detailTargetId) {
+                const detailElement = document.getElementById(detailTargetId);
+                detailElement.value = "";
+                detailElement.focus();
+            } else {
+                targetElement.focus();
+            }
+        }
+    }).open();
 }
