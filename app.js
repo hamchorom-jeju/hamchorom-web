@@ -1009,3 +1009,52 @@ function searchAddress(targetId, detailTargetId) {
         }
     }).open();
 }
+
+// --- MOBILE BACK BUTTON HANDLER ---
+// 초기 진입 시 가상의 히스토리를 하나 푸시하여 뒤로가기 이벤트를 가로챔
+window.history.pushState({ page: 'main' }, null, window.location.href);
+
+window.addEventListener('popstate', function(event) {
+    // 1. 열려있는 모달창(팝업)이 있는지 확인
+    const checkoutOverlay = document.getElementById('checkoutOverlay');
+    const lookupModal = document.getElementById('lookupModal');
+    const editModal = document.getElementById('editModal');
+    const storyModal = document.getElementById('story-modal');
+    const successModal = document.getElementById('successModal');
+    
+    let isModalOpen = false;
+    
+    if (checkoutOverlay && checkoutOverlay.style.display === 'flex') {
+        if(typeof closeCheckout === 'function') closeCheckout();
+        else checkoutOverlay.style.display = 'none';
+        isModalOpen = true;
+    } else if (lookupModal && lookupModal.style.display === 'flex') {
+        if(typeof closeLookupModal === 'function') closeLookupModal();
+        else lookupModal.style.display = 'none';
+        isModalOpen = true;
+    } else if (editModal && editModal.style.display === 'flex') {
+        if(typeof closeEditModal === 'function') closeEditModal();
+        else editModal.style.display = 'none';
+        isModalOpen = true;
+    } else if (storyModal && storyModal.style.display === 'block') {
+        storyModal.style.display = 'none';
+        isModalOpen = true;
+    } else if (successModal && successModal.style.display === 'flex') {
+        successModal.style.display = 'none';
+        isModalOpen = true;
+    }
+
+    if (isModalOpen) {
+        // 모달창만 닫았으므로 앱이 종료되지 않게 다시 상태를 푸시합니다.
+        window.history.pushState({ page: 'main' }, null, window.location.href);
+    } else {
+        // 열려있는 모달이 없다면 메인 화면이므로 앱 종료 의사 확인
+        if (confirm("앱을 종료하시겠습니까?")) {
+            // 사용자가 확인을 누르면 진짜 뒤로가기(앱 종료)를 실행합니다.
+            window.history.back();
+        } else {
+            // 취소를 누르면 앱에 머무르기 위해 다시 상태를 푸시합니다.
+            window.history.pushState({ page: 'main' }, null, window.location.href);
+        }
+    }
+});
