@@ -160,7 +160,8 @@ function showProductDetail(name) {
   openStoryModal({
       title: name,
       content: desc,
-      imageUrl: finalImg
+      imageUrl: finalImg,
+      btnText: "주문하러 가기"
   });
 }
 
@@ -798,7 +799,8 @@ async function loadFarmNews() {
                     openStoryModal({
                         imageUrl: finalNoticeImg,
                         title: notice.title,
-                        content: notice.content
+                        content: notice.content,
+                        btnText: "소식 닫기"
                     });
                 };
             }
@@ -850,7 +852,8 @@ async function loadFarmNews() {
                         openStoryModal({
                             title: story.title,
                             content: story.content,
-                            imageUrl: popupImg
+                            imageUrl: popupImg,
+                            btnText: "소식 닫기"
                         });
                     };
                     list.appendChild(item);
@@ -896,6 +899,15 @@ function openStoryModal(data) {
         modalBody.style.whiteSpace = "pre-wrap";
         modalBody.style.lineHeight = "1.6";
         
+        // 하단 닫기/액션 버튼 설정
+        const actionBtn = document.getElementById('modal-action-btn');
+        if (actionBtn) {
+            actionBtn.innerText = data.btnText || "닫기";
+            actionBtn.onclick = function() {
+                modal.style.display = 'none';
+            };
+        }
+
         modal.style.display = 'block';
     }
 }
