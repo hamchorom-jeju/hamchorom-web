@@ -871,8 +871,6 @@ function openStoryModal(data) {
         const modalTitle = document.getElementById('modal-title');
         const modalBody = document.getElementById('modal-body');
         
-        // 🍊 [핵심] 이미지가 있든 없든 닫기(X) 버튼 영역을 침범하지 않게 기본 여백 설정
-        // 모달 내부 컨테이너의 상단 패딩을 조정하거나, 첫 요소에 마진을 줍니다.
         modalTitle.style.marginTop = "0px"; 
         modalImg.style.marginTop = "0px";
 
@@ -882,14 +880,8 @@ function openStoryModal(data) {
             modalImg.style.width = '100%';
             modalImg.style.borderRadius = '8px';
             modalImg.style.marginBottom = "15px";
-            
-            // 🍊 이미지가 있을 때: X 버튼과 겹치지 않게 이미지 위에 여백 40px 부여
-            modalImg.style.marginTop = "40px"; 
-            modalTitle.style.marginTop = "10px";
         } else {
             modalImg.style.display = 'none';
-            // 🍊 이미지가 없을 때: 제목이 X 버튼과 겹치지 않게 제목 위에 여백 50px 부여
-            modalTitle.style.marginTop = "50px";
         }
 
         modalTitle.innerText = data.title || "";
