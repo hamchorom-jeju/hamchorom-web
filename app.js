@@ -799,6 +799,7 @@ async function loadFarmNews() {
                     openStoryModal({
                         imageUrl: finalNoticeImg,
                         title: notice.title,
+                        subtitle: notice.subtitle,
                         content: notice.content,
                         btnText: "소식 닫기"
                     });
@@ -851,6 +852,7 @@ async function loadFarmNews() {
                         }
                         openStoryModal({
                             title: story.title,
+                            subtitle: story.subtitle,
                             content: story.content,
                             imageUrl: popupImg,
                             btnText: "소식 닫기"
@@ -869,6 +871,7 @@ function openStoryModal(data) {
     if (modal) {
         const modalImg = document.getElementById('modal-img');
         const modalTitle = document.getElementById('modal-title');
+        const modalSubtitle = document.getElementById('modal-subtitle');
         const modalBody = document.getElementById('modal-body');
         
         modalTitle.style.marginTop = "0px"; 
@@ -885,6 +888,14 @@ function openStoryModal(data) {
         }
 
         modalTitle.innerText = data.title || "";
+        
+        if (data.subtitle) {
+            modalSubtitle.innerText = data.subtitle;
+            modalSubtitle.style.display = 'block';
+        } else {
+            modalSubtitle.style.display = 'none';
+        }
+
         modalBody.innerText = data.content || "";
         
         // 줄바꿈 보존을 위해 스타일 살짝 보강
