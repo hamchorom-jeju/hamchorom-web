@@ -111,7 +111,7 @@ function renderProducts(category, element) {
     card.style.opacity = isSoldOut ? "0.6" : "1";
     
     card.innerHTML = `
-      <img src="${imgUrl}" class="p-img" alt="${name}" style="${isSoldOut ? 'filter: grayscale(100%);' : ''}">
+      <img src="${imgUrl}" class="p-img" alt="${name}" style="cursor:pointer; ${isSoldOut ? 'filter: grayscale(100%);' : ''}" onclick="showProductDetail('${name.replace(/'/g, "\\'")}')">
       <div class="p-info">
         <div class="p-title">${name} ${isSoldOut ? '<span style="color:red; font-size:0.8rem;">[품절]</span>' : ''}</div>
         <div class="p-meta">${weight} ${count ? '| ' + count : ''} ${stockText}</div>
@@ -128,6 +128,39 @@ function renderProducts(category, element) {
       </div>
     `;
     grid.appendChild(card);
+  });
+}
+
+function showProductDetail(name) {
+  if (!allProducts) return;
+  const p = allProducts.find(x => (x['상품명'] || x.name) === name);
+  if (!p) return;
+
+  // J열의 '상세설명' 데이터
+  let desc = p.desc || "상세 설명이 등록되지 않았습니다.";
+  
+  // 이미지 포맷팅 로직 (농장소식과 동일)
+  let raw = p.image || p['사진'] || "";
+  let finalImg = "";
+  if (raw) {
+    if (raw.toLowerCase().includes('thumbnail?id=')) {
+        finalImg = raw;
+    } else if (raw.includes('id=')) {
+        let fId = raw.split('id=')[1].split('&')[0];
+        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w800`;
+    } else if (raw.includes('/d/')) {
+        let fId = raw.split('/d/')[1].split('/')[0];
+        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w800`;
+    } else if (raw.length > 10) {
+        finalImg = raw;
+    }
+  }
+
+  // 기존 story-modal 재사용
+  openStoryModal({
+      title: name,
+      content: desc,
+      imageUrl: finalImg
   });
 }
 
