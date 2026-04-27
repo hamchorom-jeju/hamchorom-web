@@ -1025,7 +1025,11 @@ function applyRecentAddress(name, phone, addr) {
         document.getElementById('receiverAddress').value = addr;
         document.getElementById('receiverAddressDetail').value = "";
     }
-    document.getElementById('receiverAddressDetail').focus();
+    // 최근 주소에는 상세주소가 이미 포함되어 있으므로 필수 입력 해제
+    document.getElementById('receiverAddressDetail').removeAttribute('required');
+    // 상세주소가 이미 채워졌으므로 포커스를 빼서 다른 작업을 할 수 있게 함
+    document.getElementById('receiverAddressDetail').blur();
+    
     // 주소 입력 시 '기록 없음' 메시지 방지 위해 container 비움
     const container = document.getElementById('addressHistoryBox');
     if (container) container.innerHTML = "";
@@ -1050,6 +1054,8 @@ function searchAddress(targetId, detailTargetId) {
             if (detailTargetId) {
                 const detailElement = document.getElementById(detailTargetId);
                 detailElement.value = "";
+                // 새 주소 검색 시에는 상세주소 필수 입력 복구
+                detailElement.setAttribute('required', 'true');
                 detailElement.focus();
             } else {
                 targetElement.focus();
