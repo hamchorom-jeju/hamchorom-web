@@ -7,6 +7,7 @@ const SHEET_NAME = "웹앱주문서";
 
 function doPost(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  initDatabase(ss); // DB 자동 점검 및 생성
   var targetSheet = ss.getSheetByName(SHEET_NAME);
 
   try {
@@ -14,6 +15,25 @@ function doPost(e) {
     if (!contents) return ContentService.createTextOutput("Error: No Contents");
 
     var payload = JSON.parse(contents);
+
+    // ==========================================
+    // 0. [회원 및 커뮤니티 전용 라우팅 처리]
+    // ==========================================
+    if (payload.action === "register") {
+      return handleRegister(ss, payload);
+    }
+    if (payload.action === "login") {
+      return handleLogin(ss, payload);
+    }
+    if (payload.action === "createPost") {
+      return handleCreatePost(ss, payload);
+    }
+    if (payload.action === "createComment") {
+      return handleCreateComment(ss, payload);
+    }
+    if (payload.action === "toggleLike") {
+      return handleToggleLike(ss, payload);
+    }
 
     // ==========================================
     // 1. [주문 수정 처리] 안티그래비티 이식 로직
@@ -137,6 +157,31 @@ if (payload.action === "updateOrder") {
 
       var totalAmount = payload.totalAmount || 0;
       var itemDetails = payload.itemDetails || "";
+      
+      // [회원 포인트 처리]
+      var sPhoneClean = String(payload.senderPhone || "").replace(/[^0-9]/g, "");
+      var usedPoints = Number(payload.usedPoints) || 0;
+      var earnedPoints = Math.floor((totalAmount - usedPoints) * 0.01); // 실결제 금액의 1% 적립
+      if (earnedPoints < 0) earnedPoints = 0;
+      
+      if (sPhoneClean && sPhoneClean !== "") {
+        var mSheet = ss.getSheetByName("회원명단");
+        if (mSheet) {
+          var mData = mSheet.getDataRange().getValues();
+          for (var i = 1; i < mData.length; i++) {
+            var mPhone = String(mData[i][0]).replace(/[^0-9]/g, "");
+            if (mPhone === sPhoneClean) {
+              var currentPoints = Number(mData[i][5]) || 0;
+              // 포인트 차감 및 적립 적용
+              var nextPoints = currentPoints - usedPoints + earnedPoints;
+              if (nextPoints < 0) nextPoints = 0;
+              mSheet.getRange(i + 1, 6).setValue(nextPoints);
+              break;
+            }
+          }
+        }
+      }
+
       var rowData = [
         timestampId,
         payload.wishDate || today,
@@ -148,15 +193,18 @@ if (payload.action === "updateOrder") {
         fixPhone(payload.senderPhone),
         itemDetails,
         payload.nickname || "",
-        payload.deliveryMsg || "",
+        payload.deliveryMsg || (usedPoints > 0 ? "[포인트사용: " + usedPoints + "p]" : ""),
         payload.orderPath || "웹앱_직접",
         payload.giftMessage || "",
         false,
-        totalAmount
+        totalAmount - usedPoints // 포인트 차감된 실결제액 기록
       ];
 
       targetSheet.appendRow(rowData);
-      return ContentService.createTextOutput(JSON.stringify({ success: true, message: "주문이 완료되었습니다." })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({ 
+        success: true, 
+        message: "주문이 완료되었습니다." + (earnedPoints > 0 ? " (" + earnedPoints + "포인트 적립 예정) 🍊" : "") 
+      })).setMimeType(ContentService.MimeType.JSON);
 
     } finally {
       lock.releaseLock();
@@ -169,6 +217,18 @@ if (payload.action === "updateOrder") {
 
 function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  initDatabase(ss); // DB 자동 점검 및 생성
+  
+  // [회원 및 커뮤니티 전용 GET 라우팅 처리]
+  if (e.parameter.action === "getPosts") {
+    return handleGetPosts(ss, e.parameter);
+  }
+  if (e.parameter.action === "getComments") {
+    return handleGetComments(ss, e.parameter);
+  }
+  if (e.parameter.action === "getMemberProfile") {
+    return handleGetMemberProfile(ss, e.parameter);
+  }
   
   // 1. [단가표] 상품 목록 가져오기
   if (e.parameter.action === "getProducts") {
@@ -414,4 +474,402 @@ function fixPhone(num) {
     return match[1] + '-' + match[2] + '-' + match[3];
   }
   return num;
+}
+
+// =========================================================================
+// 🌐 [회원제 및 커뮤니티 전용 백엔드 핵심 엔진 구현]
+// =========================================================================
+
+// 데이터베이스 초기화 (회원, 게시판, 댓글, 좋아요 시트 생성)
+function initDatabase(ss) {
+  var sheets = {
+    "회원명단": ["전화번호", "닉네임", "비밀번호", "기본배송지", "회원등급", "보유포인트", "가입일"],
+    "커뮤니티게시판": ["게시글ID", "작성자전화번호", "분류", "제목", "내용", "이미지ID", "작성시간", "조회수"],
+    "게시글댓글": ["댓글ID", "게시글ID", "작성자전화번호", "내용", "작성시간"],
+    "좋아요기록": ["게시글ID", "작성자전화번호"]
+  };
+  
+  for (var sheetName in sheets) {
+    if (!ss.getSheetByName(sheetName)) {
+      var sheet = ss.insertSheet(sheetName);
+      sheet.appendRow(sheets[sheetName]);
+      sheet.getRange(1, 1, 1, sheets[sheetName].length).setFontWeight("bold").setBackground("#E8F5E9");
+    }
+  }
+}
+
+// 패스워드 SHA-256 해시화 암호화 처리
+function hashPassword(password) {
+  var rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password, Utilities.Charset.UTF_8);
+  var hashStr = "";
+  for (var i = 0; i < rawHash.length; i++) {
+    var byteVal = rawHash[i];
+    if (byteVal < 0) byteVal += 256;
+    var byteString = byteVal.toString(16);
+    if (byteString.length == 1) byteString = "0" + byteString;
+    hashStr += byteString;
+  }
+  return hashStr;
+}
+
+// 회원 가입 처리 (1000포인트 축하금 지급)
+function handleRegister(ss, payload) {
+  var sheet = ss.getSheetByName("회원명단");
+  var data = sheet.getDataRange().getValues();
+  var phoneClean = String(payload.phone || "").replace(/[^0-9]/g, "");
+  
+  if (!phoneClean || !payload.nickname || !payload.password) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "필수 정보가 누락되었습니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  for (var i = 1; i < data.length; i++) {
+    var sPhone = String(data[i][0]).replace(/[^0-9]/g, "");
+    if (sPhone === phoneClean) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, message: "이미 가입된 휴대폰 번호입니다." })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  
+  var hashedPassword = hashPassword(payload.password);
+  var now = new Date();
+  var joinDateStr = Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+  
+  sheet.appendRow([
+    phoneClean,
+    payload.nickname,
+    hashedPassword,
+    payload.address || "",
+    "일반",
+    1000,
+    joinDateStr
+  ]);
+  
+  return ContentService.createTextOutput(JSON.stringify({ 
+    success: true, 
+    message: "회원가입이 완료되었습니다! 가입 축하 1,000포인트가 적립되었습니다. 🍊" 
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 로그인 확인
+function handleLogin(ss, payload) {
+  var sheet = ss.getSheetByName("회원명단");
+  var data = sheet.getDataRange().getValues();
+  var phoneClean = String(payload.phone || "").replace(/[^0-9]/g, "");
+  var password = payload.password;
+  
+  if (!phoneClean || !password) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "전화번호와 비밀번호를 입력해주세요." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var hashedPassword = hashPassword(password);
+  
+  for (var i = 1; i < data.length; i++) {
+    var sPhone = String(data[i][0]).replace(/[^0-9]/g, "");
+    if (sPhone === phoneClean) {
+      var sPassword = String(data[i][2]);
+      if (sPassword === hashedPassword) {
+        return ContentService.createTextOutput(JSON.stringify({
+          success: true,
+          member: {
+            phone: phoneClean,
+            nickname: String(data[i][1]),
+            address: String(data[i][3]),
+            grade: String(data[i][4]),
+            points: Number(data[i][5]) || 0
+          }
+        })).setMimeType(ContentService.MimeType.JSON);
+      } else {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, message: "비밀번호가 올바르지 않습니다." })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: false, message: "등록되지 않은 번호입니다." })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 게시글 작성 (+100포인트)
+function handleCreatePost(ss, payload) {
+  var memberSheet = ss.getSheetByName("회원명단");
+  var mData = memberSheet.getDataRange().getValues();
+  var phoneClean = String(payload.phone || "").replace(/[^0-9]/g, "");
+  
+  var memberFound = false;
+  var memberRowIdx = -1;
+  var currentPoints = 0;
+  for (var i = 1; i < mData.length; i++) {
+    var sPhone = String(mData[i][0]).replace(/[^0-9]/g, "");
+    if (sPhone === phoneClean) {
+      memberFound = true;
+      memberRowIdx = i + 1;
+      currentPoints = Number(mData[i][5]) || 0;
+      break;
+    }
+  }
+  
+  if (!memberFound) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "인증되지 않은 사용자입니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var postSheet = ss.getSheetByName("커뮤니티게시판");
+  var postId = "POST_" + new Date().getTime();
+  var now = new Date();
+  var writeDateStr = Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+  
+  postSheet.appendRow([
+    postId,
+    phoneClean,
+    payload.category || "자유",
+    payload.title || "",
+    payload.content || "",
+    payload.imageId || "",
+    writeDateStr,
+    0
+  ]);
+  
+  var bonusPoints = 100;
+  memberSheet.getRange(memberRowIdx, 6).setValue(currentPoints + bonusPoints);
+  
+  return ContentService.createTextOutput(JSON.stringify({ 
+    success: true, 
+    postId: postId,
+    message: "게시글이 성공적으로 등록되었습니다! 소통 보너스 100포인트가 적립되었습니다. 🌱"
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 댓글 작성 (+10포인트)
+function handleCreateComment(ss, payload) {
+  var memberSheet = ss.getSheetByName("회원명단");
+  var mData = memberSheet.getDataRange().getValues();
+  var phoneClean = String(payload.phone || "").replace(/[^0-9]/g, "");
+  
+  var memberFound = false;
+  var memberRowIdx = -1;
+  var currentPoints = 0;
+  for (var i = 1; i < mData.length; i++) {
+    var sPhone = String(mData[i][0]).replace(/[^0-9]/g, "");
+    if (sPhone === phoneClean) {
+      memberFound = true;
+      memberRowIdx = i + 1;
+      currentPoints = Number(mData[i][5]) || 0;
+      break;
+    }
+  }
+  
+  if (!memberFound) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "인증되지 않은 사용자입니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var commentSheet = ss.getSheetByName("게시글댓글");
+  var commentId = "CMT_" + new Date().getTime();
+  var now = new Date();
+  var writeDateStr = Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+  
+  commentSheet.appendRow([
+    commentId,
+    payload.postId,
+    phoneClean,
+    payload.content || "",
+    writeDateStr
+  ]);
+  
+  var bonusPoints = 10;
+  memberSheet.getRange(memberRowIdx, 6).setValue(currentPoints + bonusPoints);
+  
+  return ContentService.createTextOutput(JSON.stringify({ 
+    success: true, 
+    commentId: commentId,
+    message: "댓글이 등록되었습니다! (+10포인트 적립)"
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 좋아요 토글
+function handleToggleLike(ss, payload) {
+  var likeSheet = ss.getSheetByName("좋아요기록");
+  var data = likeSheet.getDataRange().getValues();
+  var phoneClean = String(payload.phone || "").replace(/[^0-9]/g, "");
+  var postId = String(payload.postId);
+  
+  if (!phoneClean || !postId) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "오류가 발생했습니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var foundRow = -1;
+  for (var i = 1; i < data.length; i++) {
+    var sPostId = String(data[i][0]);
+    var sPhone = String(data[i][1]).replace(/[^0-9]/g, "");
+    if (sPostId === postId && sPhone === phoneClean) {
+      foundRow = i + 1;
+      break;
+    }
+  }
+  
+  var liked = false;
+  if (foundRow !== -1) {
+    likeSheet.deleteRow(foundRow);
+    liked = false;
+  } else {
+    likeSheet.appendRow([postId, phoneClean]);
+    liked = true;
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: true, liked: liked })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 게시판 목록 가져오기
+function handleGetPosts(ss, params) {
+  var postSheet = ss.getSheetByName("커뮤니티게시판");
+  var memberSheet = ss.getSheetByName("회원명단");
+  var commentSheet = ss.getSheetByName("게시글댓글");
+  var likeSheet = ss.getSheetByName("좋아요기록");
+  
+  var postData = postSheet.getDataRange().getValues();
+  var memberData = memberSheet.getDataRange().getValues();
+  var commentData = commentSheet.getDataRange().getValues();
+  var likeData = likeSheet.getDataRange().getValues();
+  
+  var requesterPhone = String(params.requesterPhone || "").replace(/[^0-9]/g, "");
+  
+  var nicknameMap = {};
+  for (var i = 1; i < memberData.length; i++) {
+    var phone = String(memberData[i][0]).replace(/[^0-9]/g, "");
+    nicknameMap[phone] = String(memberData[i][1]);
+  }
+  
+  var commentCountMap = {};
+  for (var i = 1; i < commentData.length; i++) {
+    var pId = String(commentData[i][1]);
+    commentCountMap[pId] = (commentCountMap[pId] || 0) + 1;
+  }
+  
+  var likeCountMap = {};
+  var userLikedMap = {};
+  for (var i = 1; i < likeData.length; i++) {
+    var pId = String(likeData[i][0]);
+    var phone = String(likeData[i][1]).replace(/[^0-9]/g, "");
+    likeCountMap[pId] = (likeCountMap[pId] || 0) + 1;
+    
+    if (requesterPhone && phone === requesterPhone) {
+      userLikedMap[pId] = true;
+    }
+  }
+  
+  var posts = [];
+  var filterCategory = params.category;
+  
+  for (var i = postData.length - 1; i >= 1; i--) {
+    var pId = String(postData[i][0]);
+    var authorPhone = String(postData[i][1]).replace(/[^0-9]/g, "");
+    var category = String(postData[i][2]);
+    
+    if (filterCategory && filterCategory !== "All" && category !== filterCategory) {
+      continue;
+    }
+    
+    posts.push({
+      postId: pId,
+      authorPhone: authorPhone,
+      authorNickname: nicknameMap[authorPhone] || "함초롬이",
+      category: category,
+      title: String(postData[i][3]),
+      content: String(postData[i][4]),
+      imageId: String(postData[i][5]),
+      writeDate: String(postData[i][6]),
+      viewCount: Number(postData[i][7]) || 0,
+      commentCount: commentCountMap[pId] || 0,
+      likeCount: likeCountMap[pId] || 0,
+      userLiked: !!userLikedMap[pId]
+    });
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: true, data: posts })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 특정 게시글의 댓글들 조회
+function handleGetComments(ss, params) {
+  var commentSheet = ss.getSheetByName("게시글댓글");
+  var memberSheet = ss.getSheetByName("회원명단");
+  
+  var commentData = commentSheet.getDataRange().getValues();
+  var memberData = memberSheet.getDataRange().getValues();
+  
+  var targetPostId = String(params.postId);
+  
+  var nicknameMap = {};
+  for (var i = 1; i < memberData.length; i++) {
+    var phone = String(memberData[i][0]).replace(/[^0-9]/g, "");
+    nicknameMap[phone] = String(memberData[i][1]);
+  }
+  
+  var comments = [];
+  for (var i = 1; i < commentData.length; i++) {
+    var pId = String(commentData[i][1]);
+    if (pId === targetPostId) {
+      var authorPhone = String(commentData[i][2]).replace(/[^0-9]/g, "");
+      comments.push({
+        commentId: String(commentData[i][0]),
+        postId: pId,
+        authorPhone: authorPhone,
+        authorNickname: nicknameMap[authorPhone] || "함초롬이",
+        content: String(commentData[i][3]),
+        writeDate: String(commentData[i][4])
+      });
+    }
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: true, data: comments })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 회원 프로필 및 과거 주문서 정보 조회
+function handleGetMemberProfile(ss, params) {
+  var memberSheet = ss.getSheetByName("회원명단");
+  var mData = memberSheet.getDataRange().getValues();
+  var phoneClean = String(params.phone || "").replace(/[^0-9]/g, "");
+  
+  if (!phoneClean) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "휴대폰 번호가 전달되지 않았습니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var profile = null;
+  for (var i = 1; i < mData.length; i++) {
+    var sPhone = String(mData[i][0]).replace(/[^0-9]/g, "");
+    if (sPhone === phoneClean) {
+      profile = {
+        phone: phoneClean,
+        nickname: String(mData[i][1]),
+        address: String(mData[i][3]),
+        grade: String(mData[i][4]),
+        points: Number(mData[i][5]) || 0,
+        joinDate: String(mData[i][6])
+      };
+      break;
+    }
+  }
+  
+  if (!profile) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "회원 정보를 찾을 수 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var orders = [];
+  var historySheet = ss.getSheetByName("주문 현황");
+  if (historySheet) {
+    var hData = historySheet.getRange(1, 1, historySheet.getLastRow(), 11).getDisplayValues();
+    for (var i = 1; i < hData.length; i++) {
+      var rowPhoneB = String(hData[i][1] || "").replace(/[^0-9]/g, '');
+      if (rowPhoneB === phoneClean) {
+        orders.push({
+          orderId: hData[i][0],
+          status: hData[i][3],
+          tracking: hData[i][4] || "-",
+          receiver: hData[i][2],
+          items: hData[i][8],
+          totalAmount: hData[i][9]
+        });
+      }
+    }
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ 
+    success: true, 
+    profile: profile,
+    orders: orders
+  })).setMimeType(ContentService.MimeType.JSON);
 }
