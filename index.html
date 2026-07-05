@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="ko">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,60 +9,201 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-
 <body>
 
-  <!-- Top Navigation -->
+  <!-- Top Navigation Header -->
   <header>
     <div class="header-container">
-      <div class="logo">함초롬 제주농장 🍊</div>
-      <button class="lookup-btn" onclick="openLookupModal()">내 주문 확인하기</button>
+      <div class="logo" onclick="switchClientTab('home')" style="cursor:pointer;">함초롬 제주농장 🍊</div>
+      <button class="lookup-btn" onclick="switchClientTab('mypage')"><i data-lucide="user" style="width:14px; display:inline-block; vertical-align:middle; margin-right:4px;"></i> 마이페이지</button>
     </div>
   </header>
 
-  <!-- Hero Section -->
-  <section class="hero">
-  </section>
+  <!-- =========================================================================
+       🏠 탭 1: 포털형 메인 홈 (Home)
+       ========================================================================= -->
+  <div id="tab-home" class="tab-content active">
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="hero-overlay"></div>
+      <div class="hero-content">
+        <h1>함초롬 제주농장</h1>
+        <p>제주의 자연과 따뜻한 정성을 가득 담아 보냅니다.</p>
+      </div>
+    </section>
 
-<div id="notice-bar" class="notice-bar" style="display:none;">
-    <span class="notice-icon">📢</span>
-    <div id="notice-content" class="notice-text"></div>
-</div>
+    <!-- 공지사항 띠 -->
+    <div id="notice-bar" class="notice-bar" style="display:none;">
+      <span class="notice-icon">📢</span>
+      <div id="notice-content" class="notice-text"></div>
+    </div>
 
-<div id="story-section" class="story-container" style="display:none;">
-    <h3 class="section-title">함초롬 농장소식</h3>
-    <div id="story-list" class="story-wrapper">
+    <!-- 인스타 하이라이트 농장 소식 -->
+    <div id="story-section" class="story-container" style="display:none;">
+      <h3 class="section-title">함초롬 농장소식</h3>
+      <div id="story-list" class="story-wrapper"></div>
+    </div>
+
+    <!-- 포털 3대 바로가기 메뉴 카드 -->
+    <div class="portal-grid">
+      <div class="portal-card" onclick="switchClientTab('shop')">
+        <div class="portal-card-icon">
+          <i data-lucide="shopping-bag"></i>
         </div>
-</div>
+        <div class="portal-card-details">
+          <h3>🍊 산지직송 귤 쇼핑하기</h3>
+          <p>갓 수확한 싱싱한 한라봉, 천혜향을 만나보세요.</p>
+        </div>
+      </div>
+      
+      <div class="portal-card green-card" onclick="switchClientTab('community')">
+        <div class="portal-card-icon">
+          <i data-lucide="message-square"></i>
+        </div>
+        <div class="portal-card-details">
+          <h3>💬 단골 이웃 소통방 (커뮤니티)</h3>
+          <p>귤 레시피와 솔직한 구매 후기를 함께 나눕니다.</p>
+        </div>
+      </div>
 
-<div id="story-modal" class="modal">
-    <div class="modal-content">
-        <h4 id="modal-title" style="margin-top:0;"></h4>
-        <img id="modal-img" src="" alt="소식 이미지">
-        <h5 id="modal-subtitle" style="color:#D84315; font-size:1.05rem; margin-top:5px; margin-bottom:10px; font-weight:bold; display:none;"></h5>
-        <p id="modal-body"></p>
-        <button id="modal-action-btn" class="action-btn" style="margin-top: 20px; width: 100%;">닫기</button>
+      <div class="portal-card blue-card" onclick="switchClientTab('mypage')">
+        <div class="portal-card-icon">
+          <i data-lucide="award"></i>
+        </div>
+        <div class="portal-card-details">
+          <h3>👤 나의 주문 조회 & 포인트</h3>
+          <p>적립된 포인트를 확인하고 주문 현황을 조회합니다.</p>
+        </div>
+      </div>
     </div>
-</div>
+  </div>
 
-  <!-- Store Section (Products) -->
-  <main class="store-section">
-    <!-- Category Tabs -->
-    <div class="category-tabs" id="categoryTabs">
-      <!-- Tabs injected by JS -->
+  <!-- =========================================================================
+       🛒 탭 2: 상품 쇼핑몰 (Shop)
+       ========================================================================= -->
+  <div id="tab-shop" class="tab-content">
+    <main class="store-section">
+      <!-- Category Tabs -->
+      <div class="category-tabs" id="categoryTabs">
+        <!-- Tabs injected by JS -->
+      </div>
+
+      <!-- Product Grid -->
+      <div id="loadingProducts" style="text-align:center; padding: 40px; color:#F57C00;">
+        상품 목록을 불러오는 중입니다...
+      </div>
+      <div class="product-grid" id="productGrid">
+        <!-- Products injected by JS -->
+      </div>
+    </main>
+  </div>
+
+  <!-- =========================================================================
+       💬 탭 3: 이웃 소통방 (Community Forum)
+       ========================================================================= -->
+  <div id="tab-community" class="tab-content">
+    <div class="community-header">
+      <div style="display:flex; gap:8px;" id="forumCategoryContainer">
+        <button class="tab-btn active" onclick="filterForumPosts('All', this)">전체</button>
+        <button class="tab-btn" onclick="filterForumPosts('자유', this)">자유</button>
+        <button class="tab-btn" onclick="filterForumPosts('리뷰/후기', this)">리뷰/후기</button>
+        <button class="tab-btn" onclick="filterForumPosts('귤레시피', this)">귤레시피</button>
+      </div>
+      <button class="write-trigger-btn" onclick="openWriteModal()"><i data-lucide="edit-3"></i> 글쓰기</button>
     </div>
 
-    <!-- Product Grid -->
-    <div id="loadingProducts" style="text-align:center; padding: 40px; color:#F57C00;">
-      상품 목록을 불러오는 중입니다...
+    <div id="postsFeed">
+      <div style="text-align:center; padding:40px; color:var(--text-mute);">소통방 게시글 로드 중...</div>
     </div>
-    <div class="product-grid" id="productGrid">
-      <!-- Products injected by JS -->
+  </div>
+
+  <!-- =========================================================================
+       👤 탭 4: 마이페이지 및 간편 로그인 (My Page)
+       ========================================================================= -->
+  <div id="tab-mypage" class="tab-content">
+    <!-- 미로그인 상태: 로그인/회원가입 카드 -->
+    <div id="mypage-logged-out" class="profile-card">
+      <div class="login-card-inner">
+        <div class="profile-avatar" style="margin: 0 auto 15px auto;">
+          <i data-lucide="lock"></i>
+        </div>
+        <h3 style="font-size:1.2rem; margin-bottom:8px; text-align:center;">단골 회원 로그인</h3>
+        <p style="font-size:0.85rem; color:var(--text-mute); text-align:center; margin-bottom:20px;">
+          커뮤니티 글쓰기, 포인트 적립/할인 혜택을 이용하세요.<br>
+          (주문은 로그인 없이도 언제나 비밀번호 입력 없이 가능합니다!)
+        </p>
+        
+        <div class="form-group">
+          <label>휴대폰 번호</label>
+          <input type="tel" id="loginPhone" placeholder="숫자만 입력 (예: 01012345678)">
+        </div>
+        
+        <div class="form-group">
+          <label>간편 비밀번호 (숫자 4자리)</label>
+          <div class="pin-row-inner">
+            <input type="password" maxlength="1" class="pin-box-inner" onkeyup="moveNextClientPin(this, 1)" id="cpin-1">
+            <input type="password" maxlength="1" class="pin-box-inner" onkeyup="moveNextClientPin(this, 2)" id="cpin-2">
+            <input type="password" maxlength="1" class="pin-box-inner" onkeyup="moveNextClientPin(this, 3)" id="cpin-3">
+            <input type="password" maxlength="1" class="pin-box-inner" onkeyup="moveNextClientPin(this, 4)" id="cpin-4">
+          </div>
+        </div>
+
+        <button class="action-btn block-btn" onclick="submitClientLogin()">로그인하기</button>
+        <button class="action-btn outline-btn block-btn" style="margin-top:10px;" onclick="openRegisterModal()">첫 방문이세요? 4자리 비밀번호 회원가입</button>
+      </div>
     </div>
-  </main>
+
+    <!-- 로그인 상태: 프로필 및 주문내역 조회 -->
+    <div id="mypage-logged-in" class="profile-card" style="display:none;">
+      <div class="profile-header">
+        <div class="profile-avatar">
+          <i data-lucide="smile"></i>
+        </div>
+        <div style="flex:1;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <strong id="userNickname" style="font-size:1.15rem; color:var(--text-main);">단골이웃</strong>
+            <span class="badge badge-deposit" id="userGrade" style="font-size:0.7rem; padding:2px 6px;">일반</span>
+          </div>
+          <p id="userPhoneDisplay" style="font-size:0.85rem; color:var(--text-mute); margin-top:2px;">010-0000-0000</p>
+        </div>
+        <div class="points-badge">
+          <i data-lucide="coins"></i> <span id="userPoints">0</span>p
+        </div>
+      </div>
+      
+      <div style="display:flex; gap:10px; margin-bottom:25px;">
+        <button class="action-btn outline-btn" style="padding:10px; font-size:0.85rem;" onclick="submitClientLogout()">로그아웃</button>
+      </div>
+
+      <h3 style="font-size:1.1rem; color:var(--primary-color); border-bottom:1px solid var(--border-color); padding-bottom:8px; margin-bottom:15px;">🍊 나의 주문 조회</h3>
+      <div id="myOrdersList" class="lookup-results">
+        <p style="text-align:center; font-size:0.9rem; color:var(--text-mute); padding:20px;">주문 내역이 없습니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sticky Bottom Navigation Bar -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" id="nav-btn-home" onclick="switchClientTab('home')">
+      <i data-lucide="home"></i>
+      <span>홈</span>
+    </button>
+    <button class="nav-btn" id="nav-btn-shop" onclick="switchClientTab('shop')">
+      <i data-lucide="shopping-bag"></i>
+      <span>쇼핑</span>
+    </button>
+    <button class="nav-btn" id="nav-btn-community" onclick="switchClientTab('community')">
+      <i data-lucide="message-square"></i>
+      <span>소통방</span>
+    </button>
+    <button class="nav-btn" id="nav-btn-mypage" onclick="switchClientTab('mypage')">
+      <i data-lucide="user"></i>
+      <span>마이페이지</span>
+    </button>
+  </nav>
 
   <!-- Sticky Bottom Cart Bar -->
-  <div class="cart-bar" id="cartBar" style="display: none;">
+  <div class="cart-bar" id="cartBar" style="display: none; bottom: 65px;">
     <div class="cart-info">
       <span class="total-label">총 결제금액 (배송비 포함)</span>
       <span class="total-price" id="totalPriceDisplay">0원</span>
@@ -71,7 +211,9 @@
     <button class="checkout-btn" onclick="startCheckout()">선택 상품 주문하기</button>
   </div>
 
-  <!-- Checkout Overlay (Order Process) -->
+  <!-- =========================================================================
+       🛒 주문서 작성 모달 (Checkout Overlay)
+       ========================================================================= -->
   <div class="checkout-overlay" id="checkoutOverlay">
     <div class="checkout-container">
       <button class="close-btn" onclick="closeCheckout()"><i data-lucide="x"></i></button>
@@ -144,6 +286,17 @@
         <h3>추가 요청사항 및 확정</h3>
         <div class="order-summary-box">
           <p id="summaryItems"></p>
+          
+          <!-- 회원 포인트 사용 조절 패널 -->
+          <div class="points-usage-row" id="pointsDiscountContainer" style="display:none; margin: 15px 0;">
+            <div style="font-size:0.85rem;">
+              <span>보유 포인트: <strong id="checkoutUserPoints" style="color:var(--primary-color);">0</strong>p</span>
+            </div>
+            <div>
+              <input type="number" id="usePointsAmount" value="0" min="0" oninput="calculatePointsUsage()" style="width:90px; text-align:right;"> p 사용
+            </div>
+          </div>
+
           <h3 id="summaryTotal"></h3>
           <p style="font-size: 0.85rem; color: #555; margin-top:5px;">입금계좌: 농협 060-02-077998 문미진</p>
         </div>
@@ -179,29 +332,109 @@
     </div>
   </div>
 
+  <!-- =========================================================================
+       💬 커뮤니티 전용 모달창 (Write / Post Detail)
+       ========================================================================= -->
+  
+  <!-- 글쓰기 모달 -->
+  <div class="lookup-overlay" id="postWriteModal" style="z-index: 5000;">
+    <div class="lookup-box" style="max-width:500px;">
+      <button class="close-btn" onclick="closeWriteModal()"><i data-lucide="x"></i></button>
+      <h2>✍️ 소통방 글쓰기</h2>
+      
+      <div class="form-group">
+        <label>말머리 선택</label>
+        <select id="postCategory" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-size:1rem;">
+          <option value="자유">자유 수다</option>
+          <option value="리뷰/후기">솔직한 구매후기</option>
+          <option value="귤레시피">나만의 귤 레시피</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label>제목</label>
+        <input type="text" id="postTitle" placeholder="제목을 입력하세요.">
+      </div>
+      
+      <div class="form-group">
+        <label>내용</label>
+        <textarea id="postContent" rows="6" placeholder="이웃들과 나누고 싶은 따뜻한 이야기를 적어주세요. (글 작성 시 100포인트 적립!)"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>사진 첨부 (구글 드라이브 이미지 ID - 선택)</label>
+        <input type="text" id="postImageId" placeholder="이미지 ID 또는 공유 링크">
+      </div>
+
+      <button class="action-btn block-btn" onclick="submitNewForumPost()">등록하기</button>
+    </div>
+  </div>
+
+  <!-- 게시글 상세조회 및 댓글 모달 -->
+  <div class="lookup-overlay" id="postDetailModal" style="z-index: 5000;">
+    <div class="lookup-box" style="max-width:550px;">
+      <button class="close-btn" onclick="closePostDetailModal()"><i data-lucide="x"></i></button>
+      
+      <div style="font-size:0.8rem; color:var(--text-mute); display:flex; justify-content:space-between; margin-bottom:10px;">
+        <span id="detailCategory" class="badge badge-preparing">자유</span>
+        <span id="detailAuthorAndDate">단골이웃 | 2026-07-05</span>
+      </div>
+
+      <h2 id="detailTitle" style="border:none; margin-bottom:12px; font-size:1.25rem;">게시글 제목</h2>
+      
+      <img id="detailImg" src="" style="width:100%; border-radius:12px; margin-bottom:15px; display:none; max-height:250px; object-fit:cover;">
+      
+      <p id="detailContent" style="font-size:0.95rem; line-height:1.6; color:#333; white-space:pre-wrap; margin-bottom:20px;">게시글 상세 내용...</p>
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:12px; margin-bottom:10px;">
+        <button class="btn-action btn-secondary" id="postLikeBtn" onclick="togglePostLike()">
+          <i data-lucide="heart" style="width:16px; display:inline-block; vertical-align:middle; margin-right:4px;"></i> 좋아요 <span id="detailLikeCount">0</span>
+        </button>
+        <span style="font-size:0.8rem; color:var(--text-mute);">댓글 <span id="detailCommentCount">0</span>개</span>
+      </div>
+
+      <!-- 댓글 목록 -->
+      <div class="comment-list-container" id="detailCommentsContainer">
+        <!-- 댓글 로드 -->
+      </div>
+
+      <!-- 댓글 작성 폼 -->
+      <div class="comment-input-zone">
+        <input type="text" id="newCommentContent" placeholder="댓글을 남겨보세요 (+10p)">
+        <button class="action-btn" style="padding:10px 18px; flex:0;" onclick="submitNewComment()">등록</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 회원가입 모달 -->
+  <div class="lookup-overlay" id="registerModal" style="z-index: 6000;">
+    <div class="lookup-box" style="max-width:400px;">
+      <button class="close-btn" onclick="closeRegisterModal()"><i data-lucide="x"></i></button>
+      <h2>👤 간편 회원가입</h2>
+      <p style="font-size:0.85rem; color:var(--text-mute); margin-bottom:15px;">단 10초 만에 가입하고 1,000포인트를 받으세요!</p>
+      
+      <div class="form-group">
+        <label>휴대폰 번호 *</label>
+        <input type="tel" id="regPhone" placeholder="숫자만 입력 (예: 01012345678)">
+      </div>
+      <div class="form-group">
+        <label>닉네임 (소통방 별명) *</label>
+        <input type="text" id="regNickname" placeholder="예: 함초롬러브">
+      </div>
+      <div class="form-group">
+        <label>간편 비밀번호 (숫자 4자리) *</label>
+        <input type="password" id="regPassword" placeholder="기억하기 쉬운 4자리 숫자" maxlength="4">
+      </div>
+      <button class="action-btn block-btn" onclick="submitClientRegister()">회원가입 완료</button>
+    </div>
+  </div>
+
   <!-- Order Success Modal -->
   <div class="lookup-overlay" id="successModal">
     <div class="lookup-box text-center">
       <h2>🎉 주문이 완료되었습니다! 🍊</h2>
-      <p style="margin: 15px 0;">현황판(우측 상단 '내 주문 확인하기')에서 즉시 입금/배송 상태 확인이 가능합니다.</p>
+      <p style="margin: 15px 0;">현황판(마이페이지 ➡️ 나의 주문 조회)에서 즉시 입금/배송 상태 확인이 가능합니다.</p>
       <button class="action-btn" onclick="location.reload()">닫기 및 새 주문하기</button>
-    </div>
-  </div>
-
-  <!-- Order Lookup Modal -->
-  <div class="lookup-overlay" id="lookupModal">
-    <div class="lookup-box">
-      <button class="close-btn" onclick="closeLookupModal()"><i data-lucide="x"></i></button>
-      <h2>주문 현황 조회</h2>
-      <p style="font-size: 0.9rem; margin-bottom: 15px; color:#666;">주문 시 입력하신 휴대폰 번호를 숫자만 입력하세요.</p>
-
-      <div class="search-flex">
-        <input type="tel" id="lookupPhone" placeholder="숫자만 입력 (예: 01012345678)">
-        <button class="action-btn" onclick="fetchOrderStatus()">조회</button>
-      </div>
-
-      <div id="lookupLoading" style="display:none; margin-top:15px; text-align:center;">조회 중입니다...</div>
-      <div id="lookupResults" class="lookup-results"></div>
     </div>
   </div>
 
@@ -254,6 +487,17 @@
         <button class="action-btn outline-btn" onclick="closeEditModal()">취소</button>
         <button class="action-btn confirm-btn" id="editSubmitBtn" onclick="submitOrderEdit()">수정 완료</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Instagram Story Modal (농장소식 보기) -->
+  <div id="story-modal" class="modal">
+    <div class="modal-content">
+      <h4 id="modal-title" style="margin-top:0;"></h4>
+      <img id="modal-img" src="" alt="소식 이미지">
+      <h5 id="modal-subtitle" style="color:#D84315; font-size:1.05rem; margin-top:5px; margin-bottom:10px; font-weight:bold; display:none;"></h5>
+      <p id="modal-body"></p>
+      <button id="modal-action-btn" class="action-btn" style="margin-top: 20px; width: 100%;">닫기</button>
     </div>
   </div>
 

@@ -8,6 +8,12 @@ let renderedOrders = [];
 let editCart = {};
 let editingOrderIndex = -1;
 
+// 회원제 및 커뮤니티 전역 상태 변수
+let currentUser = null;
+let forumPosts = [];
+let selectedPost = null;
+let activeClientTab = "home";
+
 // 로컬 테스트용 모의 데이터 (API 연결 실패시 대비)
 const MOCK_PRODUCTS = [
   { "카테고리": "한라봉", "상태": "판매중", "상품명": "함초롬 명품 한라봉 5kg", "중량": "5kg", "과수": "15-18과", "가격": 45000, "사진": "https://lh3.googleusercontent.com/d/1pOnBm27Zkhgq6H9DQr4EeiW-MCPHkXHx" },
@@ -17,22 +23,227 @@ const MOCK_PRODUCTS = [
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchProducts();
+  initializeUserSession();
 });
 
-// --- API FETCH LOGIC ---
+// --- 0. 회원제 (USER LOGINS / SESSIONS) ---
+function initializeUserSession() {
+  const savedUser = localStorage.getItem('hamchorom_user');
+  if (savedUser) {
+    currentUser = JSON.parse(savedUser);
+    refreshUserProfile();
+  }
+}
+
+async function refreshUserProfile() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`${API_URL}?action=getMemberProfile&phone=${currentUser.phone}`);
+    const result = await res.json();
+    if (result.success) {
+      currentUser = result.profile;
+      localStorage.setItem('hamchorom_user', JSON.stringify(currentUser));
+      renderMyPage(result.orders);
+    }
+  } catch (e) {
+    console.warn("프로필 갱신 실패 (오프라인 모드 데이터 유지)", e);
+    renderMyPage();
+  }
+}
+
+// 탭 전환 엔진
+function switchClientTab(tabName) {
+  activeClientTab = tabName;
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  
+  document.getElementById(`tab-${tabName}`).classList.add('active');
+  const btn = document.getElementById(`nav-btn-${tabName}`);
+  if (btn) btn.classList.add('active');
+  
+  if (tabName === 'community') {
+    fetchForumPosts();
+  } else if (tabName === 'mypage') {
+    if (currentUser) {
+      refreshUserProfile();
+    } else {
+      renderMyPage();
+    }
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// PIN 번호 박스 포커스 이동 처리
+function moveNextClientPin(input, idx) {
+  if (input.value.length === 1 && idx < 4) {
+    document.getElementById(`cpin-${idx + 1}`).focus();
+  }
+}
+
+// 로그인 액션
+async function submitClientLogin() {
+  const phone = document.getElementById('loginPhone').value.trim();
+  let pin = "";
+  for (let i = 1; i <= 4; i++) {
+    pin += document.getElementById(`cpin-${i}`).value;
+  }
+  
+  if (!phone || pin.length < 4) {
+    return alert("전화번호와 4자리 비밀번호를 모두 입력해 주세요.");
+  }
+  
+  try {
+    const payload = {
+      action: "login",
+      phone: phone,
+      password: pin
+    };
+    
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+    const result = await res.json();
+    
+    if (result.success) {
+      currentUser = result.member;
+      localStorage.setItem('hamchorom_user', JSON.stringify(currentUser));
+      
+      // 입력창 초기화
+      document.getElementById('loginPhone').value = "";
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById(`cpin-${i}`).value = "";
+      }
+      
+      alert(`🍊 반갑습니다, ${currentUser.nickname}님! 단골 회원이 인증되었습니다.`);
+      refreshUserProfile();
+    } else {
+      alert("❌ 로그인 실패: " + result.message);
+    }
+  } catch (e) {
+    alert("서버 연결 실패: " + e.message);
+  }
+}
+
+// 로그아웃 액션
+function submitClientLogout() {
+  if (confirm("로그아웃 하시겠습니까?")) {
+    currentUser = null;
+    localStorage.removeItem('hamchorom_user');
+    renderMyPage();
+    alert("로그아웃 완료되었습니다.");
+  }
+}
+
+// 회원가입 모달 열기/닫기
+function openRegisterModal() {
+  document.getElementById('registerModal').style.display = 'flex';
+}
+function closeRegisterModal() {
+  document.getElementById('registerModal').style.display = 'none';
+}
+
+// 회원가입 액션
+async function submitClientRegister() {
+  const phone = document.getElementById('regPhone').value.trim();
+  const nickname = document.getElementById('regNickname').value.trim();
+  const password = document.getElementById('regPassword').value.trim();
+  
+  if (!phone || !nickname || password.length < 4) {
+    return alert("휴대폰 번호, 닉네임, 4자리 비밀번호를 정확히 채워주세요.");
+  }
+  
+  try {
+    const payload = {
+      action: "register",
+      phone, nickname, password
+    };
+    
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+    const result = await res.json();
+    
+    if (result.success) {
+      alert(result.message);
+      closeRegisterModal();
+      document.getElementById('loginPhone').value = phone;
+      document.getElementById('cpin-1').focus();
+    } else {
+      alert("회원가입 실패: " + result.message);
+    }
+  } catch (e) {
+    alert("서버 연결 실패: " + e.message);
+  }
+}
+
+// 마이페이지 렌더링 (로그인 / 미로그인 레이아웃 전환)
+function renderMyPage(orders = []) {
+  const loggedOutCard = document.getElementById('mypage-logged-out');
+  const loggedInCard = document.getElementById('mypage-logged-in');
+  
+  if (!currentUser) {
+    loggedOutCard.style.display = 'block';
+    loggedInCard.style.display = 'none';
+  } else {
+    loggedOutCard.style.display = 'none';
+    loggedInCard.style.display = 'block';
+    
+    document.getElementById('userNickname').innerText = currentUser.nickname;
+    document.getElementById('userGrade').innerText = currentUser.grade || '일반';
+    document.getElementById('userPhoneDisplay').innerText = fixPhone(currentUser.phone);
+    document.getElementById('userPoints').innerText = Number(currentUser.points || 0).toLocaleString();
+    
+    // 주문 내역 리스트 주입
+    const myOrdersList = document.getElementById('myOrdersList');
+    myOrdersList.innerHTML = "";
+    
+    if (orders.length === 0) {
+      myOrdersList.innerHTML = `<p style="text-align:center; font-size:0.9rem; color:var(--text-mute); padding:20px;">📦 최근 주문 이력이 없습니다.</p>`;
+      return;
+    }
+    
+    orders.forEach(order => {
+      let statusClass = "badge-pending";
+      let normStatus = (order.status || "").replace(/\s+/g, '');
+      if (normStatus.includes("입금확인")) statusClass = "badge-deposit";
+      else if (normStatus.includes("준비")) statusClass = "badge-preparing";
+      else if (normStatus.includes("발송") || normStatus.includes("배송")) statusClass = "badge-shipped";
+
+      let datePart = String(order.orderId || "").substring(0, 10);
+      
+      const div = document.createElement('div');
+      div.className = "lookup-card";
+      div.innerHTML = `
+        <div style="font-size:0.85rem; color:#888; font-weight:bold; margin-bottom:5px;">주문코드: ${order.orderId}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong style="color:var(--primary-color);">${order.items}</strong>
+          <span class="badge ${statusClass}">${order.status}</span>
+        </div>
+        <div class="meta" style="font-size:0.8rem; line-height:1.6;">
+          <div><strong>수령인:</strong> ${order.receiver} 님</div>
+          <div><strong>운송장:</strong> ${order.tracking !== "-" ? `<span style="color:#1976D2; font-weight:bold;">${order.tracking}</span>` : '출하 준비 중'}</div>
+        </div>
+      `;
+      myOrdersList.appendChild(div);
+    });
+  }
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+// --- 1. API FETCH LOGIC (PRODUCTS) ---
 async function fetchProducts() {
   const container = document.getElementById('productGrid');
   const loader = document.getElementById('loadingProducts');
   
   try {
-    // API에 GET 요청 (action=getProducts 같은 파라미터를 사용했다면 맞게 수정 가능. 기본 GET요청 보냄)
     const res = await fetch(`${API_URL}?action=getProducts`);
     let data = await res.json();
     
-    // 만약 data 구조가 배열이 아니라면 (구글 앱스크립트 응답 형태에 따라)
     if(data.data) data = data.data; 
-
-    // 백엔드에서 이미 상태가 '판매중'인 데이터만 걸러서 보내주므로 그대로 쓰면 됨
     allProducts = data;
 
     if(allProducts.length === 0) throw new Error("가져온 상품 데이터가 없습니다.");
@@ -69,7 +280,6 @@ function renderProducts(category, element) {
 
   const filtered = category === "All" ? allProducts : allProducts.filter(p => (p['품종'] || p['카테고리'] || p.category || p.variety || '기타') === category);
 
-  // 🍊 [추가 로직] 재고 기반 정렬 (판매중 상단 / 품절 하단)
   filtered.sort((a, b) => {
     const stockA = parseInt(a.stock) || 0;
     const stockB = parseInt(b.stock) || 0;
@@ -78,7 +288,7 @@ function renderProducts(category, element) {
     
     if (isASoldOut && !isBSoldOut) return 1;
     if (!isASoldOut && isBSoldOut) return -1;
-    return 0; // 동일 상태면 원장님의 시트 순서 그대로 보존
+    return 0; 
   });
 
   filtered.forEach(p => {
@@ -94,7 +304,6 @@ function renderProducts(category, element) {
       imgUrl = "https://lh3.googleusercontent.com/d/1pOnBm27Zkhgq6H9DQr4EeiW-MCPHkXHx";
     }
     
-    // 재고 및 상태 파악
     const stock = parseInt(p.stock) || 0;
     const isSoldOut = p.status === "품절" || stock <= 0;
     const currentQty = cart[name] ? cart[name].quantity : 0;
@@ -136,10 +345,8 @@ function showProductDetail(name) {
   const p = allProducts.find(x => (x['상품명'] || x.name) === name);
   if (!p) return;
 
-  // J열의 '상세설명' 데이터
   let desc = p.desc || "상세 설명이 등록되지 않았습니다.";
   
-  // 이미지 포맷팅 로직 (농장소식과 동일)
   let raw = p.image || p['사진'] || "";
   let finalImg = "";
   if (raw) {
@@ -156,7 +363,6 @@ function showProductDetail(name) {
     }
   }
 
-  // 기존 story-modal 재사용
   openStoryModal({
       title: name,
       content: desc,
@@ -170,7 +376,6 @@ function updateQty(name, change, price, stock) {
   if(!cart[name]) cart[name] = { quantity: 0, price: price };
   
   const newQty = cart[name].quantity + change;
-  
   if (newQty > stock) {
     alert(`죄송합니다. 현재 재고가 ${stock}박스뿐입니다.`);
     return;
@@ -179,12 +384,10 @@ function updateQty(name, change, price, stock) {
   cart[name].quantity = newQty;
   if(cart[name].quantity < 0) cart[name].quantity = 0;
   
-  // UI Update
   const qtyEl = document.getElementById(`qty-${name}`);
   if(qtyEl) qtyEl.innerText = cart[name].quantity;
 
   if(cart[name].quantity === 0) delete cart[name];
-
   updateCartBar();
 }
 
@@ -206,7 +409,21 @@ function updateCartBar() {
 function startCheckout() {
   document.getElementById('checkoutOverlay').style.display = 'flex';
   
-  // Update Step 3 Summary
+  // 로그인 시 회원정보 자동 기입 및 포인트 영역 활성화
+  const ptsContainer = document.getElementById('pointsDiscountContainer');
+  if (currentUser) {
+    document.getElementById('senderName').value = currentUser.nickname || '';
+    document.getElementById('senderPhone').value = currentUser.phone || '';
+    document.getElementById('nickname').value = currentUser.nickname || '';
+    
+    ptsContainer.style.display = 'flex';
+    document.getElementById('checkoutUserPoints').innerText = currentUser.points;
+    document.getElementById('usePointsAmount').value = 0;
+    document.getElementById('usePointsAmount').max = currentUser.points;
+  } else {
+    ptsContainer.style.display = 'none';
+  }
+  
   let summaryText = "";
   let total = 0;
   for(let key in cart) {
@@ -217,6 +434,26 @@ function startCheckout() {
   document.getElementById('summaryTotal').innerText = `총 결제금액: ${total.toLocaleString()}원`;
   
   goToStep(1);
+}
+
+function calculatePointsUsage() {
+  if (!currentUser) return;
+  const input = document.getElementById('usePointsAmount');
+  let amount = parseInt(input.value) || 0;
+  
+  let totalOrderAmount = 0;
+  for (let key in cart) {
+    totalOrderAmount += cart[key].price * cart[key].quantity;
+  }
+  
+  if (amount < 0) amount = 0;
+  if (amount > currentUser.points) amount = currentUser.points;
+  if (amount > totalOrderAmount) amount = totalOrderAmount;
+  
+  input.value = amount;
+  
+  const finalPaid = totalOrderAmount - amount;
+  document.getElementById('summaryTotal').innerText = `총 결제금액: ${finalPaid.toLocaleString()}원 (포인트 사용: -${amount.toLocaleString()}원)`;
 }
 
 function closeCheckout() {
@@ -280,12 +517,11 @@ function selectDelivery(type) {
     giftMsgContainer.style.display = 'block';
   }
 
-  // 🍊 [추가] 수령 방식 선택 시 주소록 실시간 조회 (전화번호 기준)
   const sPhone = document.getElementById('senderPhone').value;
   if (sPhone) checkAddressHistory(sPhone, type);
 }
 
-// --- SUBMIT ORDER (POST 15 Columns) ---
+// --- SUBMIT ORDER (POST 15 Columns + 포인트 차감 연계) ---
 async function submitFinalOrder() {
   const submitBtn = document.getElementById('submitOrderBtn');
   const originalText = submitBtn.innerText;
@@ -304,6 +540,8 @@ async function submitFinalOrder() {
   
   let totalAmount = 0;
   for(let k in cart) totalAmount += cart[k].price * cart[k].quantity;
+
+  const usedPoints = currentUser ? (parseInt(document.getElementById('usePointsAmount').value) || 0) : 0;
 
   const baseAddr = document.getElementById('receiverAddress').value.trim();
   const detailAddr = document.getElementById('receiverAddressDetail').value.trim();
@@ -325,7 +563,8 @@ async function submitFinalOrder() {
     orderPath: orderPathVal,
     giftMessage: document.getElementById('giftMessage').value || '',
     orderCheck: false,
-    totalAmount: totalAmount
+    totalAmount: totalAmount,
+    usedPoints: usedPoints
   };
 
   try {
@@ -335,15 +574,11 @@ async function submitFinalOrder() {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' }
     });
     
-    // 302 리다이렉트 등으로 인해 response.json()이 실패할 수 있는 구글 스크립트 특성상
-    // 텍스트로 받아 확인 프로세스를 거침
     const text = await response.text();
     let result;
     try {
       result = JSON.parse(text);
     } catch(e) {
-      // JSON 파싱 실패 시 (구글의 HTML 안내 페이지 등이 오면) 성공으로 간주하던 관행 유지 혹은 확인 로직
-      console.log("Response text check:", text);
       if (text.includes("Success") || text.includes("완료")) {
          result = { success: true };
       } else {
@@ -354,6 +589,11 @@ async function submitFinalOrder() {
     if (result.success) {
         closeCheckout();
         document.getElementById('successModal').style.display = 'flex';
+        // 포인트 즉시 로컬 반영 차감
+        if (currentUser && usedPoints > 0) {
+          currentUser.points = Math.max(0, currentUser.points - usedPoints);
+          localStorage.setItem('hamchorom_user', JSON.stringify(currentUser));
+        }
     } else {
         alert("⚠️ 주문 실패: " + (result.message || "알 수 없는 오류"));
         submitBtn.innerText = originalText;
@@ -362,12 +602,9 @@ async function submitFinalOrder() {
     
   } catch(err) {
     console.error("Submit error:", err);
-    // 구글 스크립트 특유의 CORS/Redirect 상황에서도 데이터는 들어갔을 확률이 높으므로
-    // 명백한 재고 부족 메시지가 아니라면 성공 처리를 유도하거나 재시도를 안내
     if (err.message.includes("재고")) {
       alert(err.message);
     } else {
-      // 원장님 버전: 일단 성공 모달 띄우기 (데이터 유실 방지 우선)
       closeCheckout();
       document.getElementById('successModal').style.display = 'flex';
     }
@@ -376,194 +613,616 @@ async function submitFinalOrder() {
   }
 }
 
-// --- ORDER LOOKUP ---
-function openLookupModal() { document.getElementById('lookupModal').style.display = 'flex'; }
-function closeLookupModal() { document.getElementById('lookupModal').style.display = 'none'; }
-
-async function fetchOrderStatus() {
-  const phone = document.getElementById('lookupPhone').value;
-  if(!phone) return alert("연락처를 입력해주세요.");
+// --- 2. 커뮤니티 전용 기능 (COMMUNITY FORUM LOGIC) ---
+async function fetchForumPosts(category = "All") {
+  const feed = document.getElementById('postsFeed');
+  feed.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-mute);">🌱 따뜻한 소통글을 불러오는 중...</div>`;
   
-  const loader = document.getElementById('lookupLoading');
-  const resultsDiv = document.getElementById('lookupResults');
-  loader.style.display = 'block'; resultsDiv.innerHTML = "";
-
+  const requester = currentUser ? currentUser.phone : "";
   try {
-    const res = await fetch(`${API_URL}?action=lookup&phone=${encodeURIComponent(phone)}`);
+    const res = await fetch(`${API_URL}?action=getPosts&requesterPhone=${encodeURIComponent(requester)}&category=${encodeURIComponent(category)}`);
     const result = await res.json();
     
-    if(result && result.data && result.data.length > 0) {
-      // 1단계: 배열 정렬 (다단계 우선순위 가중치 랭킹 시스템)
-      result.data.sort((a, b) => {
-        const getPriorityScore = (statusStr) => {
-            const s = (statusStr || "").replace(/\s+/g, '');
-            if (s.includes("주문접수")) return 1;
-            if (s.includes("입금대기")) return 2;
-            if (s.includes("입금확인")) return 3;
-            if (s.includes("상품준비")) return 4;
-            if (s.includes("발송준비")) return 5;
-            if (s.includes("발송시작") || s.includes("배송중") || s.includes("배송완료") || s.includes("발송완료")) return 6;
-            return 7;
-        };
-        
-        // 우선순위 숫자가 작을수록(1점) 배열의 앞쪽(화면 상단)으로 오도록 오름차순 정렬
-        return getPriorityScore(a.status) - getPriorityScore(b.status);
-      });
-
-      // 2단계: 백엔드 배열 렌더링
-      let globalPendingTotal = 0;
-      let cardsHtml = "";
-      renderedOrders = [];
-
-      const statusConfig = {
-        "주문접수": {
-          img: "https://lh3.googleusercontent.com/d/1fOqS9BPCzT7z-z5S_KLG28W8uDg8rbTU",
-          showEdit: true
-        },
-        "입금대기": {
-          img: "https://lh3.googleusercontent.com/d/1RCfl3twsjnbrCzMJjHjsUBKJKYXumPYx",
-          showEdit: false
-        },
-        "입금확인": {
-          img: "https://lh3.googleusercontent.com/d/1H_ou-5kFjcKVZqci1KvdUJYHR3BHy_K-",
-          showEdit: false
-        },
-        "상품준비중": {
-          img: "https://lh3.googleusercontent.com/d/1-ageN34CBr71tJKD-548CsYImDXRcwDf",
-          showEdit: false
-        },
-        "발송시작": {
-          img: "https://lh3.googleusercontent.com/d/1ZYY93vYMH27HiAoEWkXxfaLDmE28mxqn",
-          showEdit: false
-        }
-      };
-
-      result.data.forEach(order => {
-        renderedOrders.push(order);
-        const orderIdx = renderedOrders.length - 1;
-        const currentStatus = order.status || "";
-        const normStatus = currentStatus.replace(/\s+/g, '');
-        const isPending = normStatus.includes("주문접수") || normStatus.includes("입금대기");
-
-        let config = statusConfig["주문접수"];
-        if (normStatus.includes("입금대기")) config = statusConfig["입금대기"];
-        else if (normStatus.includes("입금확인")) config = statusConfig["입금확인"];
-        else if (normStatus.includes("상품준비") || normStatus.includes("발송준비")) config = statusConfig["상품준비중"];
-        else if (normStatus.includes("발송시작") || normStatus.includes("배송중") || normStatus.includes("배송완료") || normStatus.includes("발송완료")) config = statusConfig["발송시작"];
-        else if (normStatus.includes("주문접수")) config = statusConfig["주문접수"];
-
-        let badgeStatusMsg = currentStatus;
-        if (normStatus.includes("주문접수")) {
-            badgeStatusMsg = "주문서 확인중! 현단계에서만 변경사항 수정이 가능합니다.";
-        }
-
-        let trackingHtml = "";
-        let amountHtml = "";
-
-        if (isPending) {
-            let orderAmt = Number(String(order.totalAmount || 0).replace(/[^0-9]/g, '')) || 0;
-            globalPendingTotal += orderAmt;
-            let justAmount = order.totalAmount ? `${orderAmt.toLocaleString()}원` : "확인 중";
-            amountHtml = `
-            <div style="font-weight:bold; font-size:1.15rem; color:#F57C00; margin-bottom: 5px;">입금하실 결제 금액: ${justAmount}</div>
-            `;
-        } else {
-            const isShipped = normStatus.includes("발송시작") || normStatus.includes("배송중") || normStatus.includes("배송완료") || normStatus.includes("발송완료");
-            if (isShipped && order.tracking) {
-                trackingHtml = `
-                <div style="font-size:1.1rem; font-weight:bold; color:#1976D2; border: 2px dashed #1976D2; padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: left; background:#E3F2FD;">
-                    🚚 송장번호: <span style="font-size:1.4rem;">${order.tracking}</span>
-                </div>`;
-            }
-
-            let orderAmt = order.totalAmount ? order.totalAmount : "확인완료";
-            amountHtml = `
-            <div style="font-size:0.95rem; font-weight:bold; color:#2E7D32; margin-bottom: 10px;">✅ 결제 완료된 금액: ${orderAmt}</div>
-            `;
-        }
-
-        const cardColor = isPending ? '#F57C00' : '#ccc';
-        const badgeBg = isPending ? '#FFF3E0' : '#E3F2FD';
-
-        const editBtnHtml = config.showEdit && order.editable ? `
-          <div style="margin-top:12px; text-align:center;">
-            <button onclick="openEditModal(${orderIdx})" style="background:#F57C00; color:white; border:none; padding:10px 20px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.95rem; width:100%;">
-              ✏️ 주문 수정하기
-            </button>
-          </div>
-        ` : "";
-
-        let miniatureHtml = `
-        <div class="miniature-status-zone" style="justify-content: center; padding: 25px 15px;">
-            <div class="miniature-img-box" style="flex: 0 0 220px; max-width: 100%;">
-                <img src="${config.img}" alt="상태" class="floating-img" style="box-shadow: 0 10px 20px rgba(0,0,0,0.08);" />
-            </div>
-        </div>
-        `;
-
-        cardsHtml += `
-          <div class="lookup-card" data-order-id="${order.orderId || ''}" style="text-align:left; border: 2px solid ${cardColor}; padding:15px; margin-bottom:15px; border-radius:12px;">
-            <div style="font-size:0.85rem; color:#888; margin-bottom:5px; font-weight:bold;">주문번호: ${order.orderId || '번호 미발급'}</div>
-            <div style="border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:15px; display:flex; flex-direction:column; gap:10px;">
-                <h3 style="margin:0; font-size:1.15rem; color:#333;">📦 배송지: ${order.receiver || '확인중'} 님</h3>
-                <span class="badge" style="font-size:0.95rem; padding:8px 12px; background:${badgeBg}; border-radius:8px; font-weight:bold; color:#333; word-break:keep-all; line-height:1.4;">
-                    ${badgeStatusMsg || '상태 확인중'}
-                </span>
-            </div>
-
-            ${miniatureHtml}
-
-            ${trackingHtml}
-            ${amountHtml}
-
-            <div style="font-size:0.9rem; line-height:1.8; color:#444; background:#f9f9f9; padding: 12px; border-radius:8px;">
-                <div><strong style="color:#2C3E50;">주문 상품:</strong> ${order.items || '-'}</div>
-                <div><strong style="color:#2C3E50;">받는 분 성함:</strong> ${order.receiver || '-'}</div>
-                <div><strong style="color:#2C3E50;">받는 분 연락처:</strong> ${order.receiverPhone || order.phone || '-'}</div>
-                <div><strong style="color:#2C3E50;">배송지 (주소):</strong> ${order.address || '-'}</div>
-                <div><strong style="color:#2C3E50;">보내는 분:</strong> ${order.sender || '-'}</div>
-                <div><strong style="color:#2C3E50;">배송 메시지:</strong> ${order.memo || '-'}</div>
-            </div>
-            ${editBtnHtml}
-          </div>
-        `;
-      });
-
-      // 3단계: 상단 요약 바 원상복구 및 적용
-      const dominantOrder = result.data[0];
-      const customerName = dominantOrder.customerName || dominantOrder.sender || dominantOrder.receiver || "고객";
-      const displayTitle = `${customerName}님, 실시간 주문현황입니다.`;
-
-      let summaryHtml = `
-      <div class="status-title-large uppercase" style="margin-bottom:15px;">${displayTitle}</div>
-      `;
-
-      if (globalPendingTotal > 0) {
-          summaryHtml += `
-          <div style="background:white; border:2px solid #F57C00; border-radius:12px; padding:15px; margin-bottom:20px; box-shadow:0 4px 10px rgba(0,0,0,0.05);">
-              <div style="font-size:1.1rem; color:#444; margin-bottom:5px;">입금 확인이 필요한 금액: <strong style="color:#D84315; font-size:1.3rem;">${globalPendingTotal.toLocaleString()}원</strong></div>
-              <div style="font-size:0.95rem; color:#388E3C; font-weight:bold; margin-top:10px; background:#f9f9f9; padding:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
-                  <span>농협 060-02-077998 문미진</span>
-                  <button onclick="navigator.clipboard.writeText('060-02-077998'); alert('계좌번호가 복사되었습니다!');" style="background:#fff; border:1px solid #1976D2; color:#1976D2; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.85rem;">계좌복사</button>
-              </div>
-          </div>
-          `;
-      }
-
-      resultsDiv.innerHTML = summaryHtml + cardsHtml;
+    if (result.success) {
+      forumPosts = result.data || [];
+      renderForumPosts();
     } else {
-      resultsDiv.innerHTML = "<p style='color:red;'>일치하는 주문 내역이 없습니다.</p>";
+      throw new Error(result.message);
     }
-  } catch (err) {
-    console.error(err);
-    resultsDiv.innerHTML = `<p style='color:red;'>잠시후 다시 시도해주세요. (테스트 환경에서는 조회가 제한될 수 있습니다)</p>`;
-  } finally {
-    loader.style.display = 'none';
+  } catch(e) {
+    console.error(e);
+    feed.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-mute);">소통글을 불러오지 못했습니다. 로그인 후 다시 확인해 보세요.</div>`;
   }
 }
 
+function filterForumPosts(cat, btn) {
+  // Active tab styling
+  const row = btn.parentNode;
+  row.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  
+  fetchForumPosts(cat);
+}
 
-// --- ORDER EDIT LOGIC ---
+function renderForumPosts() {
+  const feed = document.getElementById('postsFeed');
+  feed.innerHTML = "";
+  
+  if (forumPosts.length === 0) {
+    feed.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-mute);">첫 번째 따뜻한 이야기의 주인공이 되어보세요! 🌱</div>`;
+    return;
+  }
+  
+  forumPosts.forEach(post => {
+    const card = document.createElement('div');
+    card.className = "forum-card";
+    card.onclick = () => openPostDetail(post.postId);
+    
+    let dateStr = String(post.writeDate || "").substring(0, 10);
+    let imageIndicator = post.imageId ? `<span style="color:var(--primary-color); font-size:0.8rem; margin-left:5px;">🖼️ 사진 첨부됨</span>` : "";
+    
+    card.innerHTML = `
+      <div class="forum-card-header">
+        <span>[${post.category}] <strong>${post.authorNickname}</strong></span>
+        <span>${dateStr}</span>
+      </div>
+      <div class="forum-card-body">
+        <h3>${post.title} ${imageIndicator}</h3>
+        <p>${post.content}</p>
+      </div>
+      <div class="forum-card-footer">
+        <div class="forum-stat"><i data-lucide="heart" style="${post.userLiked ? 'fill:red; stroke:red;' : ''}"></i> <span>좋아요 ${post.likeCount}</span></div>
+        <div class="forum-stat"><i data-lucide="message-square"></i> <span>댓글 ${post.commentCount}</span></div>
+      </div>
+    `;
+    feed.appendChild(card);
+  });
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function openWriteModal() {
+  if (!currentUser) {
+    alert("소통방 글쓰기는 회원 전용 기능입니다. 마이페이지에서 먼저 간편 가입/로그인을 완료해 주세요!");
+    switchClientTab('mypage');
+    return;
+  }
+  document.getElementById('postWriteModal').style.display = 'flex';
+}
+
+function closeWriteModal() {
+  document.getElementById('postWriteModal').style.display = 'none';
+}
+
+// 신규 게시글 등록
+async function submitNewForumPost() {
+  const category = document.getElementById('postCategory').value;
+  const title = document.getElementById('postTitle').value.trim();
+  const content = document.getElementById('postContent').value.trim();
+  const rawImg = document.getElementById('postImageId').value.trim();
+  
+  if (!title || !content) return alert("제목과 내용은 필수 입력사항입니다.");
+  
+  let imageId = rawImg;
+  if (rawImg.includes("id=")) {
+    imageId = rawImg.split("id=")[1].split("&")[0];
+  } else if (rawImg.includes("/d/")) {
+    imageId = rawImg.split("/d/")[1].split("/")[0];
+  }
+
+  try {
+    const payload = {
+      action: "createPost",
+      phone: currentUser.phone,
+      category, title, content, imageId
+    };
+    
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+    const result = await res.json();
+    
+    if (result.success) {
+      alert("🎉 게시글이 등록되었습니다! 소통 보너스 100포인트가 적립되었습니다. 🌱");
+      closeWriteModal();
+      // 입력창 청소
+      document.getElementById('postTitle').value = "";
+      document.getElementById('postContent').value = "";
+      document.getElementById('postImageId').value = "";
+      fetchForumPosts();
+      refreshUserProfile();
+    } else {
+      alert("글 등록 실패: " + result.message);
+    }
+  } catch (e) {
+    alert("서버 연결 실패: " + e.message);
+  }
+}
+
+// 게시글 상세 조회 및 댓글 목록 불러오기
+async function openPostDetail(postId) {
+  selectedPost = forumPosts.find(p => p.postId === postId);
+  if (!selectedPost) return;
+  
+  document.getElementById('detailCategory').innerText = selectedPost.category;
+  document.getElementById('detailAuthorAndDate').innerText = `${selectedPost.authorNickname} | ${String(selectedPost.writeDate || '').substring(0, 16)}`;
+  document.getElementById('detailTitle').innerText = selectedPost.title;
+  document.getElementById('detailContent').innerText = selectedPost.content;
+  document.getElementById('detailLikeCount').innerText = selectedPost.likeCount;
+  document.getElementById('detailCommentCount').innerText = selectedPost.commentCount;
+  
+  // 이미지 표시
+  const detailImg = document.getElementById('detailImg');
+  if (selectedPost.imageId && selectedPost.imageId.length > 5) {
+    detailImg.src = `https://drive.google.com/thumbnail?id=${selectedPost.imageId}&sz=w600`;
+    detailImg.style.display = 'block';
+  } else {
+    detailImg.style.display = 'none';
+  }
+  
+  // 좋아요 아이콘 활성화 처리
+  const likeBtn = document.getElementById('postLikeBtn');
+  if (selectedPost.userLiked) {
+    likeBtn.style.background = "#FFEBEE";
+    likeBtn.style.color = "#C62828";
+  } else {
+    likeBtn.style.background = "var(--primary-light)";
+    likeBtn.style.color = "var(--primary)";
+  }
+  
+  // 댓글 목록 조회
+  fetchComments(postId);
+  
+  document.getElementById('postDetailModal').style.display = 'flex';
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closePostDetailModal() {
+  document.getElementById('postDetailModal').style.display = 'none';
+  selectedPost = null;
+}
+
+// 특정 글의 댓글들을 AJAX 조회
+async function fetchComments(postId) {
+  const container = document.getElementById('detailCommentsContainer');
+  container.innerHTML = `<div style="font-size:0.8rem; text-align:center; padding:10px; color:var(--text-mute);">댓글 로딩 중...</div>`;
+  
+  try {
+    const res = await fetch(`${API_URL}?action=getComments&postId=${encodeURIComponent(postId)}`);
+    const result = await res.json();
+    
+    if (result.success) {
+      container.innerHTML = "";
+      const comments = result.data || [];
+      document.getElementById('detailCommentCount').innerText = comments.length;
+      
+      if (comments.length === 0) {
+        container.innerHTML = `<div style="font-size:0.8rem; text-align:center; padding:15px; color:var(--text-mute);">작성된 댓글이 없습니다. 첫 댓글을 남겨보세요!</div>`;
+        return;
+      }
+      
+      comments.forEach(c => {
+        const div = document.createElement('div');
+        div.className = "comment-row";
+        div.innerHTML = `
+          <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
+            <strong>${c.authorNickname}</strong>
+            <span style="font-size:0.7rem; color:var(--text-mute);">${String(c.writeDate || '').substring(5, 16)}</span>
+          </div>
+          <div>${c.content}</div>
+        `;
+        container.appendChild(div);
+      });
+    }
+  } catch (e) {
+    container.innerHTML = `<div style="font-size:0.8rem; text-align:center; padding:10px; color:red;">댓글 로드 실패</div>`;
+  }
+}
+
+// 댓글 쓰기
+async function submitNewComment() {
+  if (!currentUser) {
+    return alert("댓글 작성은 회원 전용입니다. 마이페이지에서 로그인 해주세요.");
+  }
+  if (!selectedPost) return;
+  
+  const input = document.getElementById('newCommentContent');
+  const content = input.value.trim();
+  
+  if (!content) return alert("댓글 내용을 적어주세요.");
+  
+  try {
+    const payload = {
+      action: "createComment",
+      phone: currentUser.phone,
+      postId: selectedPost.postId,
+      content: content
+    };
+    
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+    const result = await res.json();
+    
+    if (result.success) {
+      input.value = "";
+      alert("댓글이 달렸습니다! (+10포인트 적립)");
+      fetchComments(selectedPost.postId);
+      refreshUserProfile();
+    } else {
+      alert("실패: " + result.message);
+    }
+  } catch (e) {
+    alert("서버 연결 실패: " + e.message);
+  }
+}
+
+// 좋아요 누르기 (토글)
+async function togglePostLike() {
+  if (!currentUser) {
+    return alert("좋아요 클릭은 회원 전용입니다. 로그인 해 주세요!");
+  }
+  if (!selectedPost) return;
+  
+  try {
+    const payload = {
+      action: "toggleLike",
+      phone: currentUser.phone,
+      postId: selectedPost.postId
+    };
+    
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+    });
+    const result = await res.json();
+    
+    if (result.success) {
+      selectedPost.userLiked = result.liked;
+      selectedPost.likeCount = result.liked ? selectedPost.likeCount + 1 : Math.max(0, selectedPost.likeCount - 1);
+      
+      document.getElementById('detailLikeCount').innerText = selectedPost.likeCount;
+      const likeBtn = document.getElementById('postLikeBtn');
+      if (selectedPost.userLiked) {
+        likeBtn.style.background = "#FFEBEE";
+        likeBtn.style.color = "#C62828";
+        showToastAlert("❤️ 이 글을 좋아합니다!");
+      } else {
+        likeBtn.style.background = "var(--primary-light)";
+        likeBtn.style.color = "var(--primary)";
+      }
+      
+      // 소통방 피드도 백그라운드 갱신을 위해 데이터 매칭
+      const feedPost = forumPosts.find(p => p.postId === selectedPost.postId);
+      if (feedPost) {
+        feedPost.userLiked = selectedPost.userLiked;
+        feedPost.likeCount = selectedPost.likeCount;
+        renderForumPosts();
+      }
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+// 플로팅 토스트 메시지 헬퍼
+function showToastAlert(msg) {
+  let toast = document.getElementById('clientToastAlert');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'clientToastAlert';
+    toast.style.cssText = 'position:fixed; bottom:85px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.8); color:white; padding:10px 20px; border-radius:30px; font-size:0.85rem; font-weight:bold; z-index:9999; pointer-events:none; transition:opacity 0.3s; opacity:0;';
+    document.body.appendChild(toast);
+  }
+  toast.innerText = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => {
+    toast.style.opacity = '0';
+  }, 2000);
+}
+
+// --- 3. 원래 원장님 쇼핑몰 소식/상세 페이지 연동 로직 (100% 보존) ---
+
+// 공지사항 및 인스타형 소식 로드
+async function loadFarmNews() {
+    try {
+        const response = await fetch(`${API_URL}?action=getNewsAndStories`);
+        const res = await response.json();
+        const data = res.data || res; 
+
+        // [공지사항 섹션]
+        const notices = data.notices || [];
+        if (notices.length > 0) {
+            const notice = notices[0];
+            const bar = document.getElementById('notice-bar');
+            const content = document.getElementById('notice-content');
+            if (bar && content) {
+                bar.style.display = 'flex';
+                bar.style.cursor = 'pointer';
+                content.innerText = notice.title || "공지사항";
+                
+                let raw = notice.imageUrl || "";
+                let finalNoticeImg = "";
+
+                if (raw.includes('thumbnail?id=')) {
+                    finalNoticeImg = raw;
+                } else if (raw.includes('id=')) {
+                    finalNoticeImg = `https://drive.google.com/thumbnail?id=${raw.split('id=')[1].split('&')[0]}&sz=w800`;
+                } else if (raw.includes('/d/')) {
+                    finalNoticeImg = `https://drive.google.com/thumbnail?id=${raw.split('/d/')[1].split('/')[0]}&sz=w800`;
+                }
+
+                bar.onclick = function() {
+                    openStoryModal({
+                        imageUrl: finalNoticeImg,
+                        title: notice.title,
+                        subtitle: notice.subtitle,
+                        content: notice.content,
+                        btnText: "소식 닫기"
+                    });
+                };
+            }
+        }
+
+        // [농장소식 섹션] - 중앙 정렬 보존
+        const stories = data.stories || [];
+        if (stories.length > 0) {
+            const section = document.getElementById('story-section');
+            const list = document.getElementById('story-list');
+            if (section && list) {
+                section.style.display = 'block';
+                list.style.display = 'flex';
+                list.style.justifyContent = 'center'; 
+                list.style.gap = '20px';
+                list.style.flexWrap = 'wrap';
+                
+                list.innerHTML = ''; 
+                stories.forEach(story => {
+                    let raw = story.imageUrl || "";
+                    let finalImg = "https://via.placeholder.com/150?text=Hamchorom";
+                    
+                    if (raw.toLowerCase().includes('thumbnail?id=')) {
+                        finalImg = raw;
+                    } else if (raw.includes('id=')) {
+                        let fId = raw.split('id=')[1].split('&')[0];
+                        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w500`;
+                    } else if (raw.includes('/d/')) {
+                        let fId = raw.split('/d/')[1].split('/')[0];
+                        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w500`;
+                    } else if (raw.length > 10) {
+                        finalImg = raw;
+                    }
+
+                    const item = document.createElement('div');
+                    item.className = 'story-item';
+                    item.innerHTML = `
+                        <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=ImageError'">
+                        <span>${story.title || "농장소식"}</span>
+                    `;
+                    
+                    item.onclick = function() {
+                        let popupImg = finalImg;
+                        if(popupImg.includes('sz=')) {
+                            popupImg = popupImg.replace(/sz=w\d+/, 'sz=w800');
+                        }
+                        openStoryModal({
+                            title: story.title,
+                            subtitle: story.subtitle,
+                            content: story.content,
+                            imageUrl: popupImg,
+                            btnText: "소식 닫기"
+                        });
+                    };
+                    list.appendChild(item);
+                });
+            }
+        }
+    } catch (e) { console.error("소식 로딩 실패:", e); }
+}
+
+// 상세보기 팝업 엔진
+function openStoryModal(data) {
+    const modal = document.getElementById('story-modal');
+    if (modal) {
+        const modalImg = document.getElementById('modal-img');
+        const modalTitle = document.getElementById('modal-title');
+        const modalSubtitle = document.getElementById('modal-subtitle');
+        const modalBody = document.getElementById('modal-body');
+        
+        modalTitle.style.marginTop = "0px"; 
+        modalImg.style.marginTop = "0px";
+
+        if (data.imageUrl && data.imageUrl.length > 20) {
+            modalImg.src = data.imageUrl;
+            modalImg.style.display = 'block';
+            modalImg.style.width = '100%';
+            modalImg.style.borderRadius = '8px';
+            modalImg.style.marginBottom = "15px";
+        } else {
+            modalImg.style.display = 'none';
+        }
+
+        modalTitle.innerText = data.title || "";
+        
+        if (data.subtitle) {
+            modalSubtitle.innerText = data.subtitle;
+            modalSubtitle.style.display = 'block';
+        } else {
+            modalSubtitle.style.display = 'none';
+        }
+
+        modalBody.innerText = data.content || "";
+        modalBody.style.whiteSpace = "pre-wrap";
+        modalBody.style.lineHeight = "1.6";
+        
+        const actionBtn = document.getElementById('modal-action-btn');
+        if (actionBtn) {
+            actionBtn.innerText = data.btnText || "닫기";
+            actionBtn.onclick = function() {
+                modal.style.display = 'none';
+            };
+        }
+
+        modal.style.display = 'block';
+    }
+}
+
+// 팝업 닫기
+document.addEventListener('click', function(e) {
+    const modal = document.getElementById('story-modal');
+    if (e.target.classList.contains('close-modal') || e.target === modal) {
+        if (modal) modal.style.display = 'none';
+    }
+});
+
+window.addEventListener('load', loadFarmNews);
+
+// --- [추가] 주소록 자동완성 로직 ---
+async function checkAddressHistory(phone, type) {
+    let container = document.getElementById('addressHistoryBox');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'addressHistoryBox';
+        const typeSelectors = document.querySelector('.type-selectors');
+        if (typeSelectors) {
+            typeSelectors.parentNode.insertBefore(container, typeSelectors.nextSibling);
+        }
+    }
+
+    container.innerHTML = `
+        <div style="font-size:0.85rem; color:#F57C00; padding:15px; text-align:center; background:#fffaf5; border-radius:10px; margin: 10px 0; border: 1px dashed #ffccbc;">
+            최근 배송지 내역을 불러오는 중입니다... 🍊
+        </div>`;
+
+    try {
+        const res = await fetch(`${API_URL}?action=getAddressHistory&phone=${encodeURIComponent(phone)}&deliveryType=${type}`);
+        const result = await res.json();
+        renderAddressSelection(result.data || []);
+    } catch(e) { 
+        console.error("주소록 조회 실패", e);
+        container.innerHTML = ""; 
+    }
+}
+
+function renderAddressSelection(list) {
+    const container = document.getElementById('addressHistoryBox');
+    if (!container) return;
+
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div id="noHistoryMsg" style="font-size:0.85rem; color:#777; padding:15px; text-align:center; background:#f9f9f9; border-radius:10px; margin: 10px 0; border: 1px solid #eee;">
+                📍 이전 배송 기록이 없습니다.
+            </div>`;
+        
+        setTimeout(() => {
+            const msg = document.getElementById('noHistoryMsg');
+            if (msg) {
+                msg.style.transition = "opacity 0.5s";
+                msg.style.opacity = "0";
+                setTimeout(() => { if (msg) msg.style.display = 'none'; }, 500);
+            }
+        }, 4000);
+
+        ['receiverName', 'receiverPhone', 'receiverAddress'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', () => {
+                const msg = document.getElementById('noHistoryMsg');
+                if (msg) msg.style.display = 'none';
+            }, { once: true });
+        });
+        return;
+    }
+
+    let html = `
+        <div style="margin: 15px 0;">
+            <p style="font-size:0.8rem; color:#666; margin-bottom:5px; padding-left:5px; font-weight:bold;">
+                최근 배송지(${list.length}건) 내역입니다.
+            </p>
+            <p style="font-size:0.75rem; color:#F57C00; margin-bottom:10px; padding-left:5px;">
+                💡 클릭 시 해당 주소가 자동으로 입력됩니다.
+            </p>
+            <div style="background:#f8fbff; border:1px solid #d0e3ff; border-radius:12px; padding:10px; max-height:280px; overflow-y:auto; box-shadow:inset 0 2px 4px rgba(0,0,0,0.03);">
+                <div style="display:flex; flex-direction:column; gap:8px;">`;
+    
+    list.forEach(addr => {
+        html += `
+            <div onclick="applyRecentAddress('${addr.name}','${addr.phone}','${addr.address}')" 
+                 style="background:white; border:1px solid #e0eafb; padding:12px; border-radius:10px; cursor:pointer; transition: all 0.2s; border-left: 4px solid #1976d2;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <strong style="color:#1976d2; font-size:0.9rem;">${addr.name}</strong>
+                    <span style="color:#888; font-size:0.7rem;">${addr.phone || ''}</span>
+                </div>
+                <div style="color:#444; font-size:0.8rem; line-height:1.4; word-break:keep-all;">
+                    ${addr.address}
+                </div>
+            </div>`;
+    });
+    
+    html += `</div></div></div>`;
+    container.innerHTML = html;
+}
+
+function applyRecentAddress(name, phone, addr) {
+    if (deliveryType === 'self') {
+        document.getElementById('receiverAddress').value = addr;
+        document.getElementById('receiverAddressDetail').value = "";
+    } else {
+        document.getElementById('receiverName').value = name;
+        document.getElementById('receiverPhone').value = phone;
+        document.getElementById('receiverAddress').value = addr;
+        document.getElementById('receiverAddressDetail').value = "";
+    }
+    document.getElementById('receiverAddressDetail').removeAttribute('required');
+    document.getElementById('receiverAddressDetail').blur();
+    
+    const container = document.getElementById('addressHistoryBox');
+    if (container) container.innerHTML = "";
+    
+    alert(`배송지 정보가 자동 입력되었습니다.`);
+}
+
+// --- ADDRESS SEARCH (DAUM POSTCODE) ---
+function searchAddress(targetId, detailTargetId) {
+    new daum.Postcode({
+        oncomplete: function(data) {
+            let addr = '';
+            if (data.userSelectedType === 'R') {
+                addr = data.roadAddress;
+            } else { 
+                addr = data.jibunAddress;
+            }
+            
+            const targetElement = document.getElementById(targetId);
+            targetElement.value = `(${data.zonecode}) ${addr}`;
+            
+            if (detailTargetId) {
+                const detailElement = document.getElementById(detailTargetId);
+                detailElement.value = "";
+                detailElement.setAttribute('required', 'true');
+                detailElement.focus();
+            } else {
+                targetElement.focus();
+            }
+        }
+    }).open();
+}
+
+// 숫자만 들어오는 번호 정리용 헬퍼 함수
+function fixPhone(num) {
+  if (!num) return "";
+  var cleaned = ('' + num).replace(/\D/g, '');
+  var match = cleaned.match(/^(\d{3})(\d{4})(\d{4})$/);
+  if (match) {
+    return match[1] + '-' + match[2] + '-' + match[3];
+  }
+  return num;
+}
+
+// --- ORDER EDIT LOGIC (보존) ---
 function openEditModal(index) {
   const order = renderedOrders[index];
   if (!order || !order.editable) return alert("이 주문은 수정할 수 없습니다.\n원장님이 이미 작업을 시작한 주문입니다.");
@@ -573,25 +1232,19 @@ function openEditModal(index) {
 
   const editReceiverInput = document.getElementById('editReceiver');
   editReceiverInput.value = order.receiver || '';
-  editReceiverInput.dataset.originalReceiver = order.receiver || ''; // 원래 이름 저장
+  editReceiverInput.dataset.originalReceiver = order.receiver || '';
   
   document.getElementById('editSenderName').value = order.sender || '';
   
-  // 보내는 분 입력칸 보이기/숨기기 초기 설정
   const senderGroup = document.getElementById('senderNameGroup');
   if (order.sender && order.sender.trim() !== "") {
-    // 이미 선물(보내는 분이 있는 주문)이었다면 무조건 보이게 함
     senderGroup.style.display = 'block';
   } else {
-    // 본인에게 보내는 주문이었다면 일단 숨김
     senderGroup.style.display = 'none';
   }
   document.getElementById('editReceiverPhone').value = order.receiverPhone || '';
-  
-  // 기존 통주소를 두 칸으로 대략 분리 시도 (하지만 완벽 분리는 어려우므로 기본 칸에 다 넣고 상세는 비움)
   document.getElementById('editAddress').value = order.address || '';
   document.getElementById('editAddressDetail').value = '';
-  
   document.getElementById('editDeliveryMsg').value = order.memo || '';
   document.getElementById('editGiftMsg').value = order.giftMessage || '';
   document.getElementById('editOrderId').textContent = order.orderId || '';
@@ -617,13 +1270,11 @@ function checkReceiverChange() {
   const originalReceiver = document.getElementById('editReceiver').dataset.originalReceiver || '';
   const senderGroup = document.getElementById('senderNameGroup');
   
-  // 이미 보내는 분이 지정되어 있던 주문(선물)이면 계속 표시
   if (order.sender && order.sender.trim() !== "") {
     senderGroup.style.display = 'block';
     return;
   }
   
-  // 자가소비용 주문이었는데, 이름이 바뀌었다면 (선물로 바뀌는 경우) 표시
   if (currentReceiver !== originalReceiver && currentReceiver !== "") {
     senderGroup.style.display = 'block';
   } else {
@@ -656,7 +1307,6 @@ function renderEditProducts(existingItems) {
 
   allProducts.forEach(p => {
     const name = p['상품명'] || p.name;
-    const safeName = name.replace(/'/g, "\\'");
     const priceRaw = String(p['판매가'] || p['가격'] || p.price || "0").replace(/[^0-9]/g, '');
     const price = parseInt(priceRaw) || 0;
 
@@ -669,16 +1319,8 @@ function renderEditProducts(existingItems) {
       }
     }
 
-    // 현재 재고 및 상태 확인 (이제 상품 추가/수정이 불가하므로 품절 여부는 참고용)
-    const stock = parseInt(p.stock) || 0;
-    const isSoldOut = p.status === "품절" || stock <= 0;
-
-    // 수량 변경이 불가능하므로, 오직 기존에 주문했던(qty > 0) 상품만 보여줍니다.
     if (qty === 0) return;
-
-    if (qty > 0) {
-      editCart[name] = { quantity: qty, price: price };
-    }
+    editCart[name] = { quantity: qty, price: price };
 
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid #eee; border-radius:8px; margin-bottom:8px; background:white;';
@@ -715,9 +1357,6 @@ async function submitOrderEdit() {
 
   if (!receiver || !receiverPhone || !addressBase || !addressDetail) {
     return alert("받는 분 정보 및 상세주소를 모두 입력해주세요.");
-  }
-  if (Object.keys(editCart).length === 0) {
-    return alert("최소 1개 이상의 상품을 선택해주세요.");
   }
 
   const btn = document.getElementById('editSubmitBtn');
@@ -762,333 +1401,29 @@ async function submitOrderEdit() {
   }
 }
 
-// --- 원장님의 성역 (allProducts, fetchProducts 등 상단 로직 100% 보존) ---
-
-// 1. 농장소식 및 공지사항 로딩 엔진 (이미지 추출 로직만 강화)
-// 1. 농장소식 및 공지사항 로딩 엔진 (이미지 주소 판별 로직 최적화)
-async function loadFarmNews() {
-    try {
-        const response = await fetch(`${API_URL}?action=getNewsAndStories`);
-        const res = await response.json();
-        const data = res.data || res; 
-
-        // [공지사항 섹션]
-        const notices = data.notices || [];
-        if (notices.length > 0) {
-            const notice = notices[0];
-            const bar = document.getElementById('notice-bar');
-            const content = document.getElementById('notice-content');
-            if (bar && content) {
-                bar.style.display = 'flex';
-                bar.style.cursor = 'pointer';
-                content.innerText = notice.title || "공지사항";
-                
-                let raw = notice.imageUrl || "";
-                let finalNoticeImg = "";
-
-                // 🍊 원장님이 주신 썸네일 링크가 이미 완성형이면 그대로 사용
-                if (raw.includes('thumbnail?id=')) {
-                    finalNoticeImg = raw;
-                } else if (raw.includes('id=')) {
-                    finalNoticeImg = `https://drive.google.com/thumbnail?id=${raw.split('id=')[1].split('&')[0]}&sz=w800`;
-                } else if (raw.includes('/d/')) {
-                    finalNoticeImg = `https://drive.google.com/thumbnail?id=${raw.split('/d/')[1].split('/')[0]}&sz=w800`;
-                }
-
-                bar.onclick = function() {
-                    openStoryModal({
-                        imageUrl: finalNoticeImg,
-                        title: notice.title,
-                        subtitle: notice.subtitle,
-                        content: notice.content,
-                        btnText: "소식 닫기"
-                    });
-                };
-            }
-        }
-
-        // [농장소식 섹션] - 중앙 정렬 보존
-        const stories = data.stories || [];
-        if (stories.length > 0) {
-            const section = document.getElementById('story-section');
-            const list = document.getElementById('story-list');
-            if (section && list) {
-                section.style.display = 'block';
-                list.style.display = 'flex';
-                list.style.justifyContent = 'center'; 
-                list.style.gap = '20px';
-                list.style.flexWrap = 'wrap';
-                
-                list.innerHTML = ''; 
-                stories.forEach(story => {
-                    let raw = story.imageUrl || "";
-                    let finalImg = "https://via.placeholder.com/150?text=Hamchorom";
-                    
-                    // 🍊 [수정 핵심] 이미 thumbnail 주소면 자르지 말고 '통째로' 사용
-                    if (raw.toLowerCase().includes('thumbnail?id=')) {
-                        finalImg = raw;
-                    } else if (raw.includes('id=')) {
-                        let fId = raw.split('id=')[1].split('&')[0];
-                        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w500`;
-                    } else if (raw.includes('/d/')) {
-                        let fId = raw.split('/d/')[1].split('/')[0];
-                        finalImg = `https://drive.google.com/thumbnail?id=${fId}&sz=w500`;
-                    } else if (raw.length > 10) {
-                        finalImg = raw;
-                    }
-
-                    const item = document.createElement('div');
-                    item.className = 'story-item';
-                    item.innerHTML = `
-                        <img src="${finalImg}" class="story-circle" onerror="this.src='https://via.placeholder.com/150?text=ImageError'">
-                        <span>${story.title || "농장소식"}</span>
-                    `;
-                    
-                    item.onclick = function() {
-                        // 팝업 시에는 sz 파라미터가 있다면 큰 사이즈로만 교체
-                        let popupImg = finalImg;
-                        if(popupImg.includes('sz=')) {
-                            popupImg = popupImg.replace(/sz=w\d+/, 'sz=w800');
-                        }
-                        openStoryModal({
-                            title: story.title,
-                            subtitle: story.subtitle,
-                            content: story.content,
-                            imageUrl: popupImg,
-                            btnText: "소식 닫기"
-                        });
-                    };
-                    list.appendChild(item);
-                });
-            }
-        }
-    } catch (e) { console.error("소식 로딩 실패:", e); }
-}
-
-// 2. 상세보기 팝업 엔진 (상단 여백 및 겹침 방지 정밀 보정)
-function openStoryModal(data) {
-    const modal = document.getElementById('story-modal');
-    if (modal) {
-        const modalImg = document.getElementById('modal-img');
-        const modalTitle = document.getElementById('modal-title');
-        const modalSubtitle = document.getElementById('modal-subtitle');
-        const modalBody = document.getElementById('modal-body');
-        
-        modalTitle.style.marginTop = "0px"; 
-        modalImg.style.marginTop = "0px";
-
-        if (data.imageUrl && data.imageUrl.length > 20) {
-            modalImg.src = data.imageUrl;
-            modalImg.style.display = 'block';
-            modalImg.style.width = '100%';
-            modalImg.style.borderRadius = '8px';
-            modalImg.style.marginBottom = "15px";
-        } else {
-            modalImg.style.display = 'none';
-        }
-
-        modalTitle.innerText = data.title || "";
-        
-        if (data.subtitle) {
-            modalSubtitle.innerText = data.subtitle;
-            modalSubtitle.style.display = 'block';
-        } else {
-            modalSubtitle.style.display = 'none';
-        }
-
-        modalBody.innerText = data.content || "";
-        
-        // 줄바꿈 보존을 위해 스타일 살짝 보강
-        modalBody.style.whiteSpace = "pre-wrap";
-        modalBody.style.lineHeight = "1.6";
-        
-        // 하단 닫기/액션 버튼 설정
-        const actionBtn = document.getElementById('modal-action-btn');
-        if (actionBtn) {
-            actionBtn.innerText = data.btnText || "닫기";
-            actionBtn.onclick = function() {
-                modal.style.display = 'none';
-            };
-        }
-
-        modal.style.display = 'block';
-    }
-}
-
-// 3. 팝업 닫기
-document.addEventListener('click', function(e) {
-    const modal = document.getElementById('story-modal');
-    if (e.target.classList.contains('close-modal') || e.target === modal) {
-        if (modal) modal.style.display = 'none';
-    }
-});
-
-// 🚀 시동 열쇠
-window.addEventListener('load', loadFarmNews);
-
-// --- [추가] 주소록 자동완성 로직 (UX 개선 버전) ---
-async function checkAddressHistory(phone, type) {
-    let container = document.getElementById('addressHistoryBox');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'addressHistoryBox';
-        // 위치 재배치: 방식 선택 버튼(.type-selectors) 바로 아래에 삽입
-        const typeSelectors = document.querySelector('.type-selectors');
-        if (typeSelectors) {
-            typeSelectors.parentNode.insertBefore(container, typeSelectors.nextSibling);
-        }
-    }
-
-    // 1. 로딩 즉시 시각화
-    container.innerHTML = `
-        <div style="font-size:0.85rem; color:#F57C00; padding:15px; text-align:center; background:#fffaf5; border-radius:10px; margin: 10px 0; border: 1px dashed #ffccbc;">
-            최근 배송지 내역을 불러오는 중입니다... 🍊
-        </div>`;
-
-    try {
-        const res = await fetch(`${API_URL}?action=getAddressHistory&phone=${encodeURIComponent(phone)}&deliveryType=${type}`);
-        const result = await res.json();
-        renderAddressSelection(result.data || []);
-    } catch(e) { 
-        console.error("주소록 조회 실패", e);
-        container.innerHTML = ""; 
-    }
-}
-
-function renderAddressSelection(list) {
-    const container = document.getElementById('addressHistoryBox');
-    if (!container) return;
-
-    // 2. 데이터 부재 시 처리
-    if (list.length === 0) {
-        container.innerHTML = `
-            <div id="noHistoryMsg" style="font-size:0.85rem; color:#777; padding:15px; text-align:center; background:#f9f9f9; border-radius:10px; margin: 10px 0; border: 1px solid #eee;">
-                📍 이전 배송 기록이 없습니다.
-            </div>`;
-        
-        setTimeout(() => {
-            const msg = document.getElementById('noHistoryMsg');
-            if (msg) {
-                msg.style.transition = "opacity 0.5s";
-                msg.style.opacity = "0";
-                setTimeout(() => { if (msg) msg.style.display = 'none'; }, 500);
-            }
-        }, 4000);
-
-        ['receiverName', 'receiverPhone', 'receiverAddress'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener('input', () => {
-                const msg = document.getElementById('noHistoryMsg');
-                if (msg) msg.style.display = 'none';
-            }, { once: true });
-        });
-        return;
-    }
-
-    // 3. 데이터 존재 시 처리 (세로형 리스트 레이아웃)
-    let html = `
-        <div style="margin: 15px 0;">
-            <p style="font-size:0.8rem; color:#666; margin-bottom:5px; padding-left:5px; font-weight:bold;">
-                최근 배송지(${list.length}건) 내역입니다.
-            </p>
-            <p style="font-size:0.75rem; color:#F57C00; margin-bottom:10px; padding-left:5px;">
-                💡 클릭 시 해당 주소가 자동으로 입력됩니다.
-            </p>
-            <div style="background:#f8fbff; border:1px solid #d0e3ff; border-radius:12px; padding:10px; max-height:280px; overflow-y:auto; box-shadow:inset 0 2px 4px rgba(0,0,0,0.03);">
-                <div style="display:flex; flex-direction:column; gap:8px;">`;
-    
-    list.forEach(addr => {
-        html += `
-            <div onclick="applyRecentAddress('${addr.name}','${addr.phone}','${addr.address}')" 
-                 style="background:white; border:1px solid #e0eafb; padding:12px; border-radius:10px; cursor:pointer; transition: all 0.2s; border-left: 4px solid #1976d2;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                    <strong style="color:#1976d2; font-size:0.9rem;">${addr.name}</strong>
-                    <span style="color:#888; font-size:0.7rem;">${addr.phone || ''}</span>
-                </div>
-                <div style="color:#444; font-size:0.8rem; line-height:1.4; word-break:keep-all;">
-                    ${addr.address}
-                </div>
-            </div>`;
-    });
-    
-    html += `</div></div></div>`;
-    container.innerHTML = html;
-}
-
-function applyRecentAddress(name, phone, addr) {
-    if (deliveryType === 'self') {
-        document.getElementById('receiverAddress').value = addr;
-        document.getElementById('receiverAddressDetail').value = "";
-    } else {
-        document.getElementById('receiverName').value = name;
-        document.getElementById('receiverPhone').value = phone;
-        document.getElementById('receiverAddress').value = addr;
-        document.getElementById('receiverAddressDetail').value = "";
-    }
-    // 최근 주소에는 상세주소가 이미 포함되어 있으므로 필수 입력 해제
-    document.getElementById('receiverAddressDetail').removeAttribute('required');
-    // 상세주소가 이미 채워졌으므로 포커스를 빼서 다른 작업을 할 수 있게 함
-    document.getElementById('receiverAddressDetail').blur();
-    
-    // 주소 입력 시 '기록 없음' 메시지 방지 위해 container 비움
-    const container = document.getElementById('addressHistoryBox');
-    if (container) container.innerHTML = "";
-    
-    alert(`배송지 정보가 자동 입력되었습니다.`);
-}
-
-// --- ADDRESS SEARCH (DAUM POSTCODE) ---
-function searchAddress(targetId, detailTargetId) {
-    new daum.Postcode({
-        oncomplete: function(data) {
-            let addr = '';
-            if (data.userSelectedType === 'R') {
-                addr = data.roadAddress;
-            } else { 
-                addr = data.jibunAddress;
-            }
-            
-            const targetElement = document.getElementById(targetId);
-            targetElement.value = `(${data.zonecode}) ${addr}`;
-            
-            if (detailTargetId) {
-                const detailElement = document.getElementById(detailTargetId);
-                detailElement.value = "";
-                // 새 주소 검색 시에는 상세주소 필수 입력 복구
-                detailElement.setAttribute('required', 'true');
-                detailElement.focus();
-            } else {
-                targetElement.focus();
-            }
-        }
-    }).open();
-}
-
 // --- MOBILE BACK BUTTON HANDLER ---
-// 초기 진입 시 가상의 히스토리를 하나 푸시하여 뒤로가기 이벤트를 가로챔
 window.history.pushState({ page: 'main' }, null, window.location.href);
 
 window.addEventListener('popstate', function(event) {
-    // 1. 열려있는 모달창(팝업)이 있는지 확인
     const checkoutOverlay = document.getElementById('checkoutOverlay');
     const lookupModal = document.getElementById('lookupModal');
     const editModal = document.getElementById('editModal');
     const storyModal = document.getElementById('story-modal');
     const successModal = document.getElementById('successModal');
+    const postWriteModal = document.getElementById('postWriteModal');
+    const postDetailModal = document.getElementById('postDetailModal');
+    const registerModal = document.getElementById('registerModal');
     
     let isModalOpen = false;
     
     if (checkoutOverlay && checkoutOverlay.style.display === 'flex') {
-        if(typeof closeCheckout === 'function') closeCheckout();
-        else checkoutOverlay.style.display = 'none';
+        closeCheckout();
         isModalOpen = true;
     } else if (lookupModal && lookupModal.style.display === 'flex') {
-        if(typeof closeLookupModal === 'function') closeLookupModal();
-        else lookupModal.style.display = 'none';
+        closeLookupModal();
         isModalOpen = true;
     } else if (editModal && editModal.style.display === 'flex') {
-        if(typeof closeEditModal === 'function') closeEditModal();
-        else editModal.style.display = 'none';
+        closeEditModal();
         isModalOpen = true;
     } else if (storyModal && storyModal.style.display === 'block') {
         storyModal.style.display = 'none';
@@ -1096,18 +1431,23 @@ window.addEventListener('popstate', function(event) {
     } else if (successModal && successModal.style.display === 'flex') {
         successModal.style.display = 'none';
         isModalOpen = true;
+    } else if (postWriteModal && postWriteModal.style.display === 'flex') {
+        closeWriteModal();
+        isModalOpen = true;
+    } else if (postDetailModal && postDetailModal.style.display === 'flex') {
+        closePostDetailModal();
+        isModalOpen = true;
+    } else if (registerModal && registerModal.style.display === 'flex') {
+        closeRegisterModal();
+        isModalOpen = true;
     }
 
     if (isModalOpen) {
-        // 모달창만 닫았으므로 앱이 종료되지 않게 다시 상태를 푸시합니다.
         window.history.pushState({ page: 'main' }, null, window.location.href);
     } else {
-        // 열려있는 모달이 없다면 메인 화면이므로 앱 종료 의사 확인
         if (confirm("앱을 종료하시겠습니까?")) {
-            // 사용자가 확인을 누르면 진짜 뒤로가기(앱 종료)를 실행합니다.
             window.history.back();
         } else {
-            // 취소를 누르면 앱에 머무르기 위해 다시 상태를 푸시합니다.
             window.history.pushState({ page: 'main' }, null, window.location.href);
         }
     }

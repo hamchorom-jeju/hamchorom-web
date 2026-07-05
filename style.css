@@ -261,3 +261,305 @@ input:focus, textarea:focus { outline: none; border-color: var(--primary-color);
   font-weight: 800;
   color: #D84315;
 }
+
+/* =========================================================================
+   📱 [신규 포털 홈 및 하단 내비바, 커뮤니티 전용 레이아웃 스타일 정의]
+   ========================================================================= */
+
+/* Tab Switching Content */
+.tab-content {
+  display: none;
+  animation: tabFadeIn 0.3s ease-out;
+}
+.tab-content.active {
+  display: block;
+}
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Sticky Bottom Navigation */
+.bottom-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 65px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(0,0,0,0.06);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 1000;
+  max-width: 800px;
+  margin: 0 auto;
+  box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.03);
+}
+.nav-btn {
+  background: none;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--text-mute);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  flex: 1;
+  height: 100%;
+}
+.nav-btn.active {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+.nav-btn i {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.2;
+}
+
+/* Portal Home Cards */
+.portal-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.portal-card {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(0,0,0,0.05);
+  box-shadow: 0 8px 24px rgba(245, 124, 0, 0.03);
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.portal-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgba(245, 124, 0, 0.07);
+}
+.portal-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #FFF3E0;
+  color: var(--primary-color);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.portal-card-icon i {
+  width: 24px; height: 24px;
+}
+.portal-card.green-card .portal-card-icon {
+  background: #E8F5E9;
+  color: var(--secondary-color);
+}
+.portal-card.blue-card .portal-card-icon {
+  background: #E3F2FD;
+  color: #1E88E5;
+}
+.portal-card-details h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: var(--text-main);
+}
+.portal-card-details p {
+  font-size: 0.8rem;
+  color: var(--text-mute);
+}
+
+/* Community Forum Posts */
+.community-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px 10px 20px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.write-trigger-btn {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.forum-card {
+  background: var(--card-bg);
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  padding: 18px;
+  margin: 0 20px 14px 20px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.01);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.forum-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.03);
+}
+.forum-card-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+}
+.forum-card-body h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--text-main);
+}
+.forum-card-body p {
+  font-size: 0.9rem;
+  color: #4A5568;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.forum-card-footer {
+  display: flex;
+  gap: 15px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #F7FAFC;
+  font-size: 0.8rem;
+  color: var(--text-mute);
+}
+.forum-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.forum-stat i {
+  width: 14px; height: 14px;
+}
+
+/* Profiles & Logins */
+.profile-card {
+  background: var(--card-bg);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  padding: 24px;
+  margin: 20px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.02);
+}
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.profile-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #FFF3E0;
+  color: var(--primary-color);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.profile-avatar i {
+  width: 24px; height: 24px;
+}
+.points-badge {
+  background: var(--primary-color);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* PIN login styles */
+.login-card-inner {
+  text-align: center;
+  padding: 10px 0;
+}
+.pin-row-inner {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+.pin-box-inner {
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  text-align: center;
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: var(--primary-color);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.pin-box-inner:focus {
+  border-color: var(--primary-color);
+}
+
+/* Comment Box inside detail modal */
+.comment-input-zone {
+  display: flex;
+  gap: 8px;
+  margin-top: 15px;
+}
+.comment-input-zone input {
+  flex: 1;
+}
+.comment-list-container {
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-color);
+  margin-top: 15px;
+  padding-top: 10px;
+}
+.comment-row {
+  font-size: 0.85rem;
+  padding: 6px 0;
+  border-bottom: 1px dotted #EDF2F7;
+}
+
+/* Points usage row in order form */
+.points-usage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #F7FAFC;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  margin-top: 10px;
+}
+.points-usage-row input {
+  width: 100px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  text-align: right;
+  font-family: inherit;
+}
