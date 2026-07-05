@@ -36,6 +36,28 @@ function doPost(e) {
     }
 
     // ==========================================
+    // 0-2. [어드민 콘솔 전용 라우팅 처리]
+    // ==========================================
+    if (payload.action === "adminUpdateOrderStatus") {
+      return handleAdminUpdateOrderStatus(ss, payload);
+    }
+    if (payload.action === "adminSaveProduct") {
+      return handleAdminSaveProduct(ss, payload);
+    }
+    if (payload.action === "adminSaveNews") {
+      return handleAdminSaveNews(ss, payload);
+    }
+    if (payload.action === "adminDeleteNews") {
+      return handleAdminDeleteNews(ss, payload);
+    }
+    if (payload.action === "adminAdjustPoints") {
+      return handleAdminAdjustPoints(ss, payload);
+    }
+    if (payload.action === "adminDeletePost") {
+      return handleAdminDeletePost(ss, payload);
+    }
+
+    // ==========================================
     // 1. [주문 수정 처리] 안티그래비티 이식 로직
     // ==========================================
     // === 수정된 updateOrder 판별 로직 (api.gs 내 doPost 상단) ===
@@ -228,6 +250,9 @@ function doGet(e) {
   }
   if (e.parameter.action === "getMemberProfile") {
     return handleGetMemberProfile(ss, e.parameter);
+  }
+  if (e.parameter.action === "adminGetAllData") {
+    return handleAdminGetAllData(ss);
   }
   
   // 1. [단가표] 상품 목록 가져오기
@@ -872,4 +897,408 @@ function handleGetMemberProfile(ss, params) {
     profile: profile,
     orders: orders
   })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// =========================================================================
+// 👑 [어드민 콘솔 전용 백엔드 핵심 기능 구현]
+// =========================================================================
+
+// 어드민 데이터 일괄 조회 (주문, 상품, 소식, 회원, 게시글)
+function handleAdminGetAllData(ss) {
+  var orders = [];
+  
+  var webSheet = ss.getSheetByName("웹앱주문서");
+  if (webSheet) {
+    var wData = webSheet.getDataRange().getDisplayValues();
+    for (var i = 1; i < wData.length; i++) {
+      orders.push({
+        orderId: wData[i][0],
+        wishDate: wData[i][1],
+        receiver: wData[i][2],
+        receiverPhone: wData[i][3],
+        address: wData[i][4],
+        depositor: wData[i][5],
+        sender: wData[i][6],
+        phone: wData[i][7],
+        items: wData[i][8],
+        nickname: wData[i][9],
+        memo: wData[i][10],
+        orderPath: wData[i][11],
+        giftMessage: wData[i][12],
+        tracking: "-",
+        status: "✅ 주문접수 (확인 중)",
+        totalAmount: wData[i][14]
+      });
+    }
+  }
+  
+  var historySheet = ss.getSheetByName("주문 현황");
+  if (historySheet) {
+    var hData = historySheet.getDataRange().getDisplayValues();
+    for (var i = 1; i < hData.length; i++) {
+      orders.push({
+        orderId: hData[i][0],
+        phone: hData[i][1],
+        receiver: hData[i][2],
+        status: hData[i][3],
+        tracking: hData[i][4] || "-",
+        wishDate: hData[i][5],
+        receiverPhone: hData[i][6],
+        address: hData[i][7],
+        items: hData[i][8],
+        totalAmount: hData[i][9],
+        sender: hData[i][10],
+        memo: ""
+      });
+    }
+  }
+
+  orders.reverse();
+
+  var products = [];
+  var productSheet = ss.getSheetByName("단가표");
+  if (productSheet) {
+    var pData = productSheet.getDataRange().getValues();
+    for (var i = 1; i < pData.length; i++) {
+      products.push({
+        name: String(pData[i][0]),
+        variety: String(pData[i][1]),
+        usage: String(pData[i][2]),
+        weight: String(pData[i][3]),
+        count: String(pData[i][4]),
+        price: String(pData[i][5]),
+        shipping: String(pData[i][6]),
+        status: String(pData[i][7]),
+        image: String(pData[i][8]),
+        desc: String(pData[i][9]),
+        stock: String(pData[i][11])
+      });
+    }
+  }
+
+  var newsList = [];
+  var newsSheet = ss.getSheetByName("농장소식");
+  if (newsSheet) {
+    var nData = newsSheet.getDataRange().getValues();
+    for (var i = 1; i < nData.length; i++) {
+      var isShow = String(nData[i][5]).trim();
+      if (isShow === "Y") {
+        newsList.push({
+          date: String(nData[i][0]),
+          category: String(nData[i][1]),
+          title: String(nData[i][2]),
+          subtitle: String(nData[i][6] || ""),
+          image: String(nData[i][3]),
+          content: String(nData[i][4])
+        });
+      }
+    }
+  }
+  newsList.reverse();
+
+  var members = [];
+  var memberSheet = ss.getSheetByName("회원명단");
+  if (memberSheet) {
+    var mData = memberSheet.getDataRange().getValues();
+    for (var i = 1; i < mData.length; i++) {
+      members.push({
+        phone: String(mData[i][0]),
+        nickname: String(mData[i][1]),
+        address: String(mData[i][3]),
+        grade: String(mData[i][4]),
+        points: Number(mData[i][5]) || 0,
+        joinDate: String(mData[i][6])
+      });
+    }
+  }
+
+  var posts = [];
+  var postSheet = ss.getSheetByName("커뮤니티게시판");
+  if (postSheet) {
+    var poData = postSheet.getDataRange().getValues();
+    
+    var nicknameMap = {};
+    for (var j = 0; j < members.length; j++) {
+      nicknameMap[members[j].phone] = members[j].nickname;
+    }
+    
+    for (var i = 1; i < poData.length; i++) {
+      var authorPhone = String(poData[i][1]).replace(/[^0-9]/g, "");
+      posts.push({
+        postId: String(poData[i][0]),
+        authorPhone: authorPhone,
+        authorNickname: nicknameMap[authorPhone] || "함초롬이",
+        category: String(poData[i][2]),
+        title: String(poData[i][3]),
+        content: String(poData[i][4]),
+        imageId: String(poData[i][5]),
+        writeDate: String(poData[i][6])
+      });
+    }
+  }
+  posts.reverse();
+
+  return ContentService.createTextOutput(JSON.stringify({
+    success: true,
+    orders: orders,
+    products: products,
+    news: newsList,
+    members: members,
+    posts: posts
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 주문 상태 및 송장번호 변경 처리 (웹앱주문서에서 주문현황 시트로 자동 이관 대응)
+function handleAdminUpdateOrderStatus(ss, payload) {
+  var targetId = String(payload.orderId || "").trim();
+  var status = payload.status;
+  var tracking = payload.tracking || "-";
+  
+  if (!targetId || !status) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "필수 인자가 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var historySheet = ss.getSheetByName("주문 현황");
+  var webSheet = ss.getSheetByName("웹앱주문서");
+  
+  if (!historySheet || !webSheet) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "시트를 찾을 수 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  // 1. 주문 현황에서 찾아서 업데이트 시도
+  var hData = historySheet.getDataRange().getDisplayValues();
+  var foundInHistory = false;
+  for (var i = 1; i < hData.length; i++) {
+    if (String(hData[i][0]).trim() === targetId) {
+      var row = i + 1;
+      historySheet.getRange(row, 4).setValue(status); // D열: 상태
+      historySheet.getRange(row, 5).setValue(tracking); // E열: 송장번호
+      foundInHistory = true;
+      break;
+    }
+  }
+  
+  if (foundInHistory) {
+    return ContentService.createTextOutput(JSON.stringify({ success: true, message: "성공" })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  // 2. 주문 현황에 없고 웹앱주문서에 있는 경우 -> 웹앱주문서 정보 이관
+  var wData = webSheet.getDataRange().getDisplayValues();
+  var wRowIdx = -1;
+  for (var i = 1; i < wData.length; i++) {
+    if (String(wData[i][0]).trim() === targetId) {
+      wRowIdx = i + 1;
+      break;
+    }
+  }
+  
+  if (wRowIdx !== -1) {
+    var row = wData[wRowIdx - 1];
+    historySheet.appendRow([
+      row[0],  // orderId (A)
+      row[7],  // phone / senderPhone (H)
+      row[2],  // receiver / receiverName (C)
+      status,  // status (D)
+      tracking, // tracking (E)
+      row[1],  // wishDate / date (B)
+      row[3],  // receiverPhone (D)
+      row[4],  // receiverAddress / address (E)
+      row[8],  // items / itemDetails (I)
+      row[14], // totalAmount (O)
+      row[6]   // sender / senderName (G)
+    ]);
+    return ContentService.createTextOutput(JSON.stringify({ success: true, message: "성공" })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: false, message: "주문번호를 찾을 수 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 상품 단가표 추가 및 정보 수정
+function handleAdminSaveProduct(ss, payload) {
+  var sheet = ss.getSheetByName("단가표");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "단가표 시트가 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  
+  var name = String(payload.name || "").trim();
+  if (!name) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "상품명이 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  
+  var data = sheet.getDataRange().getValues();
+  var foundRowIdx = -1;
+  
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === name) {
+      foundRowIdx = i + 1;
+      break;
+    }
+  }
+  
+  if (foundRowIdx !== -1) {
+    // 기존 상품 정보 수정
+    sheet.getRange(foundRowIdx, 2).setValue(payload.variety || "");
+    sheet.getRange(foundRowIdx, 4).setValue(payload.weight || "");
+    sheet.getRange(foundRowIdx, 5).setValue(payload.count || "");
+    sheet.getRange(foundRowIdx, 6).setValue(Number(payload.price) || 0);
+    sheet.getRange(foundRowIdx, 8).setValue(payload.status || "판매중");
+    sheet.getRange(foundRowIdx, 9).setValue(payload.image || "");
+    sheet.getRange(foundRowIdx, 10).setValue(payload.desc || "");
+    sheet.getRange(foundRowIdx, 12).setValue(Number(payload.stock) || 0);
+  } else {
+    // 새 상품 추가
+    sheet.appendRow([
+      name,
+      payload.variety || "",
+      "", // C: 사용용도 (공백)
+      payload.weight || "",
+      payload.count || "",
+      Number(payload.price) || 0,
+      "", // G: 배송구분
+      payload.status || "판매중",
+      payload.image || "",
+      payload.desc || "",
+      "", // K: 공백
+      Number(payload.stock) || 0
+    ]);
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: "성공" })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 농장 소식 등록 및 수정
+function handleAdminSaveNews(ss, payload) {
+  var sheet = ss.getSheetByName("농장소식");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "농장소식 시트가 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  
+  var title = String(payload.title || "").trim();
+  if (!title) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "소식 제목이 누락되었습니다." })).setMimeType(ContentService.MimeType.JSON);
+  
+  var data = sheet.getDataRange().getValues();
+  var foundRowIdx = -1;
+  
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][2]).trim() === title) {
+      foundRowIdx = i + 1;
+      break;
+    }
+  }
+  
+  var now = new Date();
+  var dateStr = Utilities.formatDate(now, "Asia/Seoul", "yyyy-MM-dd HH:mm:ss");
+  
+  if (foundRowIdx !== -1) {
+    sheet.getRange(foundRowIdx, 1).setValue(dateStr);
+    sheet.getRange(foundRowIdx, 2).setValue(payload.type || "스토리");
+    sheet.getRange(foundRowIdx, 4).setValue(payload.imageId || "");
+    sheet.getRange(foundRowIdx, 5).setValue(payload.content || "");
+    sheet.getRange(foundRowIdx, 6).setValue("Y"); // 노출 상태 강제 복구
+    sheet.getRange(foundRowIdx, 7).setValue(payload.subtitle || "");
+  } else {
+    sheet.appendRow([
+      dateStr,
+      payload.type || "스토리",
+      title,
+      payload.imageId || "",
+      payload.content || "",
+      "Y",
+      payload.subtitle || ""
+    ]);
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: "성공" })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 농장 소식 숨김(삭제) 처리
+function handleAdminDeleteNews(ss, payload) {
+  var sheet = ss.getSheetByName("농장소식");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "농장소식 시트가 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  
+  var title = String(payload.title || "").trim();
+  var data = sheet.getDataRange().getValues();
+  var foundRowIdx = -1;
+  
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][2]).trim() === title) {
+      foundRowIdx = i + 1;
+      break;
+    }
+  }
+  
+  if (foundRowIdx !== -1) {
+    sheet.getRange(foundRowIdx, 6).setValue("N"); // F열: 노출 여부 N으로 변경
+    return ContentService.createTextOutput(JSON.stringify({ success: true, message: "성공" })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: false, message: "해당 소식을 찾을 수 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 회원 포인트 직접 강제 조절
+function handleAdminAdjustPoints(ss, payload) {
+  var sheet = ss.getSheetByName("회원명단");
+  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "회원명단 시트가 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+  
+  var phoneClean = String(payload.phone || "").replace(/[^0-9]/g, "");
+  var points = Number(payload.points);
+  
+  if (!phoneClean || isNaN(points)) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: "인자가 누락되었거나 비정상적입니다." })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  var data = sheet.getDataRange().getValues();
+  var foundRowIdx = -1;
+  
+  for (var i = 1; i < data.length; i++) {
+    var sPhone = String(data[i][0]).replace(/[^0-9]/g, "");
+    if (sPhone === phoneClean) {
+      foundRowIdx = i + 1;
+      break;
+    }
+  }
+  
+  if (foundRowIdx !== -1) {
+    sheet.getRange(foundRowIdx, 6).setValue(points); // F열: 보유 포인트
+    return ContentService.createTextOutput(JSON.stringify({ success: true, message: "성공" })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: false, message: "회원을 찾을 수 없습니다." })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 커뮤니티 게시글 및 해당 댓글 강제 삭제
+function handleAdminDeletePost(ss, payload) {
+  var postSheet = ss.getSheetByName("커뮤니티게시판");
+  var commentSheet = ss.getSheetByName("게시글댓글");
+  var likeSheet = ss.getSheetByName("좋아요기록");
+  
+  var postId = String(payload.postId).trim();
+  if (!postId) return ContentService.createTextOutput(JSON.stringify({ success: false, message: "게시글 ID가 누락되었습니다." })).setMimeType(ContentService.MimeType.JSON);
+  
+  // 1. 게시글 삭제
+  if (postSheet) {
+    var pData = postSheet.getDataRange().getValues();
+    for (var i = pData.length - 1; i >= 1; i--) {
+      if (String(pData[i][0]).trim() === postId) {
+        postSheet.deleteRow(i + 1);
+        break;
+      }
+    }
+  }
+  
+  // 2. 해당 댓글 일괄 삭제
+  if (commentSheet) {
+    var cData = commentSheet.getDataRange().getValues();
+    for (var i = cData.length - 1; i >= 1; i--) {
+      if (String(cData[i][1]).trim() === postId) {
+        commentSheet.deleteRow(i + 1);
+      }
+    }
+  }
+  
+  // 3. 해당 좋아요 기록 일괄 삭제
+  if (likeSheet) {
+    var lData = likeSheet.getDataRange().getValues();
+    for (var i = lData.length - 1; i >= 1; i--) {
+      if (String(lData[i][0]).trim() === postId) {
+        likeSheet.deleteRow(i + 1);
+      }
+    }
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: "성공" })).setMimeType(ContentService.MimeType.JSON);
 }
